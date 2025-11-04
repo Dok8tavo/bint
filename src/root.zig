@@ -630,11 +630,6 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
         pub fn divFloorStatic(s: Self, comptime other: comptime_int) DivFloor(FromComptime(other)) {
             return s.divFloor(fromComptime(other));
         }
-        /// This function return the floored division of `1` by `s`. It's floored towards negative
-        /// infinity.
-        pub fn invFloor(s: Self) InvFloor {
-            return fromComptime(1).divFloor(s);
-        }
 
         test divFloor {
             const eight: u8 = 8;
@@ -718,11 +713,6 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
         /// negative infinity.
         pub fn divTruncStatic(s: Self, comptime other: comptime_int) DivFloor(FromComptime(other)) {
             return s.divTrunc(fromComptime(other));
-        }
-        /// This function return the floored division of `1` by `s`. It's floored towards negative
-        /// infinity.
-        pub fn invTrunc(s: Self) InvTrunc {
-            return fromComptime(1).divTrunc(s);
         }
 
         test divTrunc {
