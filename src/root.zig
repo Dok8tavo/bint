@@ -43,9 +43,6 @@ pub fn isBint(comptime T: type) bool {
     };
 }
 
-// TODO: mod
-// TODO: divExact
-// TODO: pow
 pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type {
     @setEvalBranchQuota(100_000);
     std.debug.assert(minimum <= maximum);
@@ -387,6 +384,10 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             return Div(T).Error!Div(T).div_exact.Payload();
         }
 
+        pub const InvFloor = FromComptime(1).DivFloor(Self);
+        pub const InvTrunc = FromComptime(1).DivTrunc(Self);
+        pub const InvExact = FromComptime(1).DivExact(Self);
+
         /// This type only stores the necessary bits for representing the range of legal `Self`
         /// values.
         pub const Packed = enum(std.math.IntFittingRange(0, max_value - min_value)) {
@@ -624,10 +625,15 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
                 return error.DivisionByZero;
             return @enumFromInt(@divFloor(self_wide.value(), other_wide.value()));
         }
-        /// This function returned the floored division of `s` by `other`. It's floored towards
+        /// This function returne the floored division of `s` by `other`. It's floored towards
         /// negative infinity.
         pub fn divFloorStatic(s: Self, comptime other: comptime_int) DivFloor(FromComptime(other)) {
             return s.divFloor(fromComptime(other));
+        }
+        /// This function return the floored division of `1` by `s`. It's floored towards negative
+        /// infinity.
+        pub fn invFloor(s: Self) InvFloor {
+            return fromComptime(1).divFloor(s);
         }
 
         test divFloor {
@@ -712,6 +718,11 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
         /// negative infinity.
         pub fn divTruncStatic(s: Self, comptime other: comptime_int) DivFloor(FromComptime(other)) {
             return s.divTrunc(fromComptime(other));
+        }
+        /// This function return the floored division of `1` by `s`. It's floored towards negative
+        /// infinity.
+        pub fn invTrunc(s: Self) InvTrunc {
+            return fromComptime(1).divTrunc(s);
         }
 
         test divTrunc {

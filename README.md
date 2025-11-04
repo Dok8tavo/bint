@@ -14,12 +14,9 @@ It also provides a few guaranteed optimizations (even in debug mode), like opera
 | `add`      | `addStatic`                   | 🟢          | 🟢         | 🟡      |
 | `sub`      | `subStatic`, `neg`            | 🟢          | 🟢         | 🟡      |
 | `mul`      | `mulStatic`                   | 🟢          | 🟢         | 🟡      |
-| `divFloor` | `divFloorStatic`              | 🟢          | 🟢         | 🟡      |
-| `divTrunc` | `divTruncStatic`              | 🟢          | 🟢         | 🟡      |
-| `divExact` | `divExactStatic`              | 🔴          | 🔴         | 🔴      |
-| `invFloor` |                               | 🔴          | 🔴         | 🔴      |
-| `invTrunc` |                               | 🔴          | 🔴         | 🔴      |
-| `invExact` |                               | 🔴          | 🔴         | 🔴      |
+| `divFloor` | `divFloorStatic`, `invFloor`  | 🟢          | 🟢         | 🟡      |
+| `divTrunc` | `divTruncStatic`, `invTrunc`  | 🟢          | 🟢         | 🟡      |
+| `divExact` | `divExactStatic`, `invExact`  | 🔴          | 🔴         | 🔴      |
 | `mod`      | `modStatic`                   | 🔴          | 🔴         | 🔴      |
 | `pow`      | `powStatic`                   | 🔴          | 🔴         | 🔴      |
 | `abs`      |                               | 🟢          | 🟢         | 🟠      |
