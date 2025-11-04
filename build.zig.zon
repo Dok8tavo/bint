@@ -1,0 +1,13 @@
+.{
+    .name = .bint,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.15.1",
+    .paths = .{
+        "src",
+        "build.zig",
+        "build.zig.zon",
+        "README.md",
+        "LICENSE.md",
+    },
+    .fingerprint = 0x5b7be337bae8b05d,
+}
