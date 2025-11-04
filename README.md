@@ -9,25 +9,27 @@ It also provides a few guaranteed optimizations (even in debug mode), like opera
 
 | name       | variants                      | implemented | documented | testing |
 |------------|-------------------------------|-------------|------------|---------|
-| `widen`    |                               | ✅           | ✅          | ✅       |
-| `init`     |                               | ✅           | ✅          | ✅       |
-| `add`      | `addStatic`                   | ✅           | ✅          | ✅       |
-| `sub`      | `subStatic`                   | ✅           | ✅          | ✅       |
-| `neg`      |                               | ✅           | ✅          | ✅       |
-| `mul`      | `mulStatic`                   | ✅           | ✅          | ✅       |
-| `divFloor` | `divFloorStatic`              | ✅           | ✅          | ✅       |
-| `divTrunc` | `divTruncStatic`              | ✅           | ✅          | ✅       |
-| `divExact` | `divExactStatic`              | ❎           | ❎          | ❎       |
-| `abs`      |                               | ✅           | ✅          | ✅       |
-| `max`      | `maxStatic`                   | ✅           | ✅          | ✅       |
-| `min`      | `minStatic`                   | ✅           | ✅          | ✅       |
-| `ceil`     | `ceilStatic`                  | ✅           | ✅          | ✅       |
-| `floor`    | `floorStatic`                 | ✅           | ✅          | ✅       |
-| `furthest` | `furthestStatic`              | ✅           | ✅          | ✅       |
-| `closest`  | `closestStatic`               | ✅           | ✅          | ✅       |
-| `ord`      | `isEqual`, `isMore`, `isLess` | ✅           | ✅          | ✅       |
-
-
+| `widen`    |                               | 🟢          | 🟢         | 🟡      |
+| `init`     |                               | 🟢          | 🟢         | 🟢      |
+| `add`      | `addStatic`                   | 🟢          | 🟢         | 🟡      |
+| `sub`      | `subStatic`, `neg`            | 🟢          | 🟢         | 🟡      |
+| `mul`      | `mulStatic`                   | 🟢          | 🟢         | 🟡      |
+| `divFloor` | `divFloorStatic`              | 🟢          | 🟢         | 🟡      |
+| `divTrunc` | `divTruncStatic`              | 🟢          | 🟢         | 🟡      |
+| `divExact` | `divExactStatic`              | 🔴          | 🔴         | 🔴      |
+| `invFloor` |                               | 🔴          | 🔴         | 🔴      |
+| `invTrunc` |                               | 🔴          | 🔴         | 🔴      |
+| `invExact` |                               | 🔴          | 🔴         | 🔴      |
+| `mod`      | `modStatic`                   | 🔴          | 🔴         | 🔴      |
+| `pow`      | `powStatic`                   | 🔴          | 🔴         | 🔴      |
+| `abs`      |                               | 🟢          | 🟢         | 🟠      |
+| `max`      | `maxStatic`                   | 🟢          | 🟢         | 🟡      |
+| `min`      | `minStatic`                   | 🟢          | 🟢         | 🟡      |
+| `ceil`     | `ceilStatic`                  | 🟢          | 🟢         | 🟡      |
+| `floor`    | `floorStatic`                 | 🟢          | 🟢         | 🟡      |
+| `furthest` | `furthestStatic`              | 🟢          | 🟢         | 🟡      |
+| `closest`  | `closestStatic`               | 🟢          | 🟢         | 🟡      |
+| `ord`      | `isEqual`, `isMore`, `isLess` | 🟢          | 🟢         | 🟡      |
 
 ## 📃 License
 
