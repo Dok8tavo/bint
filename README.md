@@ -1,8 +1,33 @@
 # ⚡ Bint
 
-Bint is a Zig module for bounded integers —bints—, defined by their minimum and maximum values.
-It provides arimthmetic operations safe from overflow/underflow through type-checking, and safe from division by zero and narrow-casting by type-checking when possible and by runtime regular Zig errors otherwise.
+Bint is a Zig module for bounded integers —bints— defined by their minimum and maximum values.
+
+It provides arithmetic operations safe from overflow/underflow through type-checking, and safe from division by zero and narrow-casting by type-checking when possible and by runtime regular Zig errors otherwise.
 It also provides a few guaranteed optimizations (even in debug mode), like operations on "unique-values", _i.e._ bints whose minimum and maximum values are equal, are no-op even when they're operated at runtime.
+
+## ⚙️ Operations
+
+| name       | variants                      | implemented | documented | testing |
+|------------|-------------------------------|-------------|------------|---------|
+| `widen`    |                               | ✅           | ✅          | ✅       |
+| `init`     |                               | ✅           | ✅          | ✅       |
+| `add`      | `addStatic`                   | ✅           | ✅          | ✅       |
+| `sub`      | `subStatic`                   | ✅           | ✅          | ✅       |
+| `neg`      |                               | ✅           | ✅          | ✅       |
+| `mul`      | `mulStatic`                   | ✅           | ✅          | ✅       |
+| `divFloor` | `divFloorStatic`              | ✅           | ✅          | ✅       |
+| `divTrunc` | `divTruncStatic`              | ✅           | ✅          | ✅       |
+| `divExact` | `divExactStatic`              | ❎           | ❎          | ❎       |
+| `abs`      |                               | ✅           | ✅          | ✅       |
+| `max`      | `maxStatic`                   | ✅           | ✅          | ✅       |
+| `min`      | `minStatic`                   | ✅           | ✅          | ✅       |
+| `ceil`     | `ceilStatic`                  | ✅           | ✅          | ✅       |
+| `floor`    | `floorStatic`                 | ✅           | ✅          | ✅       |
+| `furthest` | `furthestStatic`              | ✅           | ✅          | ✅       |
+| `closest`  | `closestStatic`               | ✅           | ✅          | ✅       |
+| `ord`      | `isEqual`, `isMore`, `isLess` | ✅           | ✅          | ✅       |
+
+
 
 ## 📃 License
 
