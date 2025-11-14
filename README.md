@@ -1,32 +1,26 @@
 # ⚡ Bint
 
-Bint is a Zig module for bounded integers —bints— defined by their minimum and maximum values.
+Bint is a Zig module for bounded integers —bints— defined by their lower and upper bounds.
 
-It provides arithmetic operations safe from overflow/underflow through type-checking, and safe from division by zero and narrow-casting by type-checking when possible and by runtime regular Zig errors otherwise.
-It also provides a few guaranteed optimizations (even in debug mode), like operations on "unique-values", _i.e._ bints whose minimum and maximum values are equal, are no-op even when they're operated at runtime.
+It provides arithmetic operations safe from overflow/underflow.
 
-## ⚙️ Operations
+Zig provides built-in operators with the following behaviors:
 
-| name       | variants                      | implemented | documented | testing |
-|------------|-------------------------------|-------------|------------|---------|
-| `widen`    |                               | 🟢          | 🟢         | 🟡      |
-| `init`     |                               | 🟢          | 🟢         | 🟢      |
-| `add`      | `addStatic`                   | 🟢          | 🟢         | 🟡      |
-| `sub`      | `subStatic`, `neg`            | 🟢          | 🟢         | 🟡      |
-| `mul`      | `mulStatic`                   | 🟢          | 🟢         | 🟡      |
-| `divFloor` | `divFloorStatic`              | 🟢          | 🟢         | 🟡      |
-| `divTrunc` | `divTruncStatic`              | 🟢          | 🟢         | 🟡      |
-| `divExact` | `divExactStatic`              | 🔴          | 🔴         | 🔴      |
-| `mod`      | `modStatic`                   | 🔴          | 🔴         | 🔴      |
-| `pow`      | `powStatic`                   | 🔴          | 🔴         | 🔴      |
-| `abs`      |                               | 🟢          | 🟢         | 🟠      |
-| `max`      | `maxStatic`                   | 🟢          | 🟢         | 🟡      |
-| `min`      | `minStatic`                   | 🟢          | 🟢         | 🟡      |
-| `ceil`     | `ceilStatic`                  | 🟢          | 🟢         | 🟡      |
-| `floor`    | `floorStatic`                 | 🟢          | 🟢         | 🟡      |
-| `furthest` | `furthestStatic`              | 🟢          | 🟢         | 🟡      |
-| `closest`  | `closestStatic`               | 🟢          | 🟢         | 🟡      |
-| `ord`      | `isEqual`, `isMore`, `isLess` | 🟢          | 🟢         | 🟡      |
+- wrapping,
+- saturating,
+- A0A0A0?xzyrjhk%-ing (panic when safe, UB when unsafe),
+
+Bints operations are widening instead: they provide a wide enough type to guarantee no overflow
+or underflow can happen.
+
+## 🤓 Resources
+
+For the most part the API of bint types is quite simple. The names and doc comments are most likely
+to get a grasp of it.
+
+But I recommend at least glancing at `src/test.zig` since it contains useful examples and
+explanations. The average ziguana should be able to learn basically everything about bints by
+casually reading this file.
 
 ## 📃 License
 

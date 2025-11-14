@@ -1,0 +1,603 @@
+//! Although these tests are unit tests, I recommend reading them to understand the API of bints.
+//! The code gives valid usage examples, and the comments thouroughly explain what is happening.
+//! Following them in order is an efficient way of getting to know the entire API, since a test can
+//! mostly build upon concepts that have been introduced earlier.
+//!
+//! Some specific features of a declaration might take a bit more work and/or are shared by other
+//! functions. So there are some tests named "declarationName - feature/concept name".
+//!
+
+const bint = @import("root.zig");
+const std = @import("std");
+
+const Bint = bint.Bint;
+
+test "fromComptime" {
+    // The `fromComptime` function returns a bint.
+    const thirteen = bint.fromComptime(13);
+    const Thirteen = @TypeOf(thirteen);
+    try std.testing.expect(bint.isBint(Thirteen));
+
+    // The return type can represent one unique number.
+    try std.testing.expectEqual(13, Thirteen.min_int);
+    try std.testing.expectEqual(13, Thirteen.max_int);
+
+    // It's the same as using the same upper and lower bounds.
+    try std.testing.expectEqual(Bint(13, 13), Thirteen);
+}
+
+test "from" {
+    // The `from` function returns a bint.
+    const thirteen = bint.from(@as(i7, 13));
+    const Thirteen = @TypeOf(thirteen);
+    try std.testing.expect(bint.isBint(Thirteen));
+
+    // The return type is as narrow as possible and as wide as necessary.
+    try std.testing.expectEqual(std.math.minInt(i7), Thirteen.min_int);
+    try std.testing.expectEqual(std.math.maxInt(i7), Thirteen.max_int);
+
+    // For convenience, one can use other bints as arguments, it'll just return them back then.
+    const FiveToEight = Bint(5, 8);
+
+    var eight: FiveToEight =
+        // Using `@enumFromInt(...)` on a bint type is highly discouraged.
+        // Most cases should be covered by `from`, `.init` and `.widen`.
+        @enumFromInt(8);
+
+    _ = &eight;
+
+    const eight_again = bint.from(eight);
+    // The return type is still as narrom as possible and as wide as necessary.
+    const FiveToEightAgain = @TypeOf(eight_again);
+    try std.testing.expectEqual(FiveToEight, FiveToEightAgain);
+    try std.testing.expectEqual(eight, eight_again);
+}
+
+test "init" {
+    // The `.init` function makes an instance of a specific `Bint(...)` type out of the instance of
+    // another `Bint(...)` type or a regular integer type.
+    const SomeBint = Bint(-1, 10);
+    // This works.
+    const some_bint = try SomeBint.init(@as(u8, 1));
+
+    const OtherBint = Bint(-2, 5);
+    const other_bint = try OtherBint.init(@as(i8, 1));
+
+    // This works too.
+    const same_bint = try SomeBint.init(other_bint);
+    try std.testing.expectEqual(some_bint, same_bint);
+
+    // If you try to make the instance from some value out of the bounds, it'll fail.
+    try std.testing.expectError(error.OutOfBoundsInteger, SomeBint.init(@as(u8, 11)));
+    try std.testing.expectError(error.OutOfBoundsInteger, SomeBint.init(@as(i8, -2)));
+
+    // It works with the bounds themselves.
+    _ = try SomeBint.init(@as(i32, 10));
+    _ = try SomeBint.init(@as(i32, -1));
+
+    // Unfortunately, because of weird comptime vs runtime stuff, I haven't found a way to make it
+    // work elegantly with `comptime_int` yet. This use-case might be limited though, because you
+    // can still use `.widen` instead of `.init`.
+}
+
+test "init - comptime smartness" {
+    // The result of `.init` is "comptime smart". By this I mean, it can't fail if you give it the
+    // instance of a type that can't represent a value out of the bounds. It also can't pass if you
+    // give it the instance of a type that can't represent a value *within* the bounds.
+    //
+    // You can always still handle these provably impossible cases. It's typically more elegant
+    // when dealing with generics. But you can also `@compileError` your way out of them,
+    // effectively letting Zig's type system proving the soundness of your `.init` call.
+
+    const NegtenToTwenty = Bint(-10, 20);
+    const NegtenToTwelve = Bint(-10, 12);
+
+    const eleven = NegtenToTwelve.init(@as(u8, 11)) catch unreachable;
+
+    // From it's type, Zig knows that `eleven` can't be out of `-10..=20`. So the failing path is a
+    // dead path, not analyzed by Zig.
+    var eleven_again = NegtenToTwenty.init(eleven) catch @compileError(
+        "This can't happen because `NegtenToTwelve` only represent `-10..=12` values.",
+    );
+
+    // We're only ensuring this doesn't only work with comptime values.
+    _ = &eleven_again;
+
+    // Same with regular integers, if they can't represent an out-of-bounds value.
+    var eleven_still = NegtenToTwenty.init(@as(u4, 11)) catch @compileError(
+        "This can't happen because `u4` only represent `0..<16` values.",
+    );
+
+    _ = &eleven_still;
+
+    try std.testing.expectEqual(eleven_again, eleven_still);
+
+    // For a convenient wrapper around the `.init(...) catch @compileError(...)` construct, see
+    // `.widen`.
+
+    // On the other hand, and this is maybe less useful, the passing path is also a dead path
+    // when you give `.init` a value that can't be within bounds.
+
+    const TwentyToThirty = Bint(20, 30);
+
+    // We're ensuring this doesn't only happen with comptime values.
+    var runtime = TwentyToThirty.init(@as(u4, 10));
+    _ = &runtime;
+
+    if (runtime) |_|
+        @compileError("This can't happen because `u4` only represents `0..<16` values")
+    else |fail| // This will be reached though.
+        try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
+
+    // Same with bints
+    const ZeroToTen = Bint(0, 10);
+    const five = ZeroToTen.init(@as(u8, 5)) catch unreachable;
+
+    var runtime_2 = TwentyToThirty.init(five);
+    _ = &runtime_2;
+
+    if (runtime_2) |_|
+        @compileError("This can't happen because `ZeroToTen` only represents `0..=10` values.")
+    else |fail|
+        try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
+}
+
+test "widen" {
+    // The `.widen` function makes an instance of a specific `Bint(...)` type out of the instance
+    // of another `Bint(...)` type or a regular integer type.
+    //
+    // When the other `Bint(...)` type or the regular integer type CAN represent values out of
+    // bounds, it throws a compile error.
+    //
+    // In the end, it's a convenient wrapper for `.init(...) catch @compileError(generic_message)`.
+
+    const NegtenToTen = Bint(-10, 10);
+    const OneToSeven = Bint(1, 7);
+
+    const six = OneToSeven.init(@as(u8, 6)) catch unreachable;
+
+    // This works:
+    const six_again = NegtenToTen.widen(six);
+
+    // This too:
+    const six_still = NegtenToTen.widen(@as(i4, 6));
+
+    const six_again_still = NegtenToTen.widen(6);
+
+    try std.testing.expectEqual(six_again, six_still);
+    try std.testing.expectEqual(six_still, six_again_still);
+
+    // This wouldn't:
+    //const six_still_again = NegtenToTen.widen(@as(u4, 6));
+
+    // Nor this:
+    //const not_six = NegtenToTen.widen(11);
+}
+
+test "int" {
+    // This function gives you back an instance of smallest regular integer type that can represent
+    // the value.
+
+    const five = Bint(0, 20).widen(5);
+    const as_u5 = five.int();
+
+    try std.testing.expectEqual(5, as_u5);
+    try std.testing.expectEqual(u5, @TypeOf(as_u5));
+
+    const five_again = Bint(-1, 20).widen(5);
+    const as_i6 = five_again.int();
+
+    try std.testing.expectEqual(5, as_i6);
+    try std.testing.expectEqual(i6, @TypeOf(as_i6));
+}
+
+// Now that we know how to initialize and reify bints, let's see how we can to manipulate them and
+// take advantage of their invariants.
+
+test "add" {
+    // This function returns the addition of two bints (or a bint and a regular integer).
+    // The result is a bint whose bounds cover all possible values.
+
+    const TenToTwenty = Bint(10, 20);
+    const ten = TenToTwenty.widen(10);
+
+    const NegoneToTwo = Bint(-1, 2);
+    const one = NegoneToTwo.widen(1);
+
+    const eleven = ten.add(one);
+
+    const NineToTwentytwo = @TypeOf(eleven);
+
+    try std.testing.expectEqual(11, eleven.int());
+
+    // If `one` was `-1` instead of `1`, the sum would've been `9`.
+    try std.testing.expectEqual(9, NineToTwentytwo.min_int);
+
+    // If `one` was `2` instead of `1`, and `ten` was `20` instead of `10`, the sum would've been
+    // `22`.
+    try std.testing.expectEqual(22, NineToTwentytwo.max_int);
+
+    // That's what it comes down to:
+    try std.testing.expectEqual(Bint(-1 + 10, 2 + 20), NineToTwentytwo);
+}
+
+test "add - widening" {
+    // The result of an addition can be wider than its terms, in order to avoid overflowing.
+    const UnsignedByte = Bint(0, 255);
+    const unsigned_byte = UnsignedByte.widen(200);
+    try std.testing.expectEqual(u8, @TypeOf(unsigned_byte.int()));
+
+    const sum = unsigned_byte.add(unsigned_byte);
+    // The addition could be `0 + 0 = 0` or `255 + 255 = 510`. We're ready for everything.
+    try std.testing.expectEqual(Bint(0, 510), @TypeOf(sum));
+    // A `u9` can hold an integer from `0` to `512`, so it's the best pick here.
+    try std.testing.expectEqual(u9, @TypeOf(sum.int()));
+    // The result didn't wrap, saturate or trigger illegal behavior.
+    try std.testing.expectEqual(400, sum.int());
+
+    const Negthousand = Bint(-1000, -1000);
+    const negthousand = Negthousand.widen(-1000);
+
+    // This works too when underflowing.
+    const sum_2 = sum.add(negthousand);
+    try std.testing.expectEqual(Bint(-1000, -490), @TypeOf(sum_2));
+    try std.testing.expectEqual(i11, @TypeOf(sum_2.int()));
+    try std.testing.expectEqual(-600, sum_2.int());
+}
+
+test "sub" {
+    // This function returns the substraction of two bints (or a bint and a regular integer).
+    // The result is a bint whose bounds cover all possible values.
+
+    const TwelveToSeventeen = Bint(12, 17);
+    const NegthreeToSix = Bint(-3, 6);
+
+    const substractee = TwelveToSeventeen.widen(13);
+    const substractor = NegthreeToSix.widen(1);
+    const substracted = substractee.sub(substractor);
+
+    try std.testing.expectEqual(Bint(6, 20), @TypeOf(substracted));
+    try std.testing.expectEqual(12, substracted.int());
+}
+
+test "sub - widening" {
+    // The result of a substraction can be wider than its terms, in order to avoid underflowing.
+    const OneToTen = Bint(1, 10);
+    const one = OneToTen.widen(1);
+    const five = OneToTen.widen(5);
+
+    try std.testing.expectEqual(u4, @TypeOf(one.int()));
+
+    const negfour = one.sub(five);
+
+    try std.testing.expectEqual(Bint(-9, 9), @TypeOf(negfour));
+    try std.testing.expectEqual(i5, @TypeOf(negfour.int()));
+    try std.testing.expectEqual(-4, negfour.int());
+
+    // It works with overflowing too.
+    const NegOneToZero = Bint(-1, 0);
+    const negone = NegOneToZero.widen(-1);
+
+    try std.testing.expectEqual(i1, @TypeOf(negone.int()));
+
+    const zero = negone.sub(negone);
+
+    try std.testing.expectEqual(Bint(-1, 1), @TypeOf(zero));
+    try std.testing.expectEqual(i2, @TypeOf(zero.int()));
+    try std.testing.expectEqual(0, zero.int());
+}
+
+test "mul" {
+    // This function returns the product of two bints (or a bint and a regular integer).
+    // The result is a bint that can cover all possible values.
+
+    const EightToTwenty = Bint(8, 20);
+    const NegnineToTen = Bint(-9, 10);
+
+    const ten = EightToTwenty.widen(10);
+    const negone = NegnineToTen.widen(-1);
+    const negten = ten.mul(negone);
+
+    try std.testing.expectEqual(Bint(-180, 200), @TypeOf(negten));
+    try std.testing.expectEqual(-10, negten.int());
+}
+
+test "mul - widening" {
+    // The result of a multiplication can be wider than its terms, in order to avoid overflowing.
+    const TwoToTen = Bint(2, 10);
+    const three = TwoToTen.widen(3);
+    const six = TwoToTen.widen(6);
+
+    try std.testing.expectEqual(u4, @TypeOf(three.int()));
+
+    const eighteen = six.mul(three);
+
+    try std.testing.expectEqual(Bint(4, 100), @TypeOf(eighteen));
+    try std.testing.expectEqual(u7, @TypeOf(eighteen.int()));
+    try std.testing.expectEqual(18, eighteen.int());
+
+    // It works with underflowing as well.
+    const NegeightToZero = Bint(-8, 0);
+    const negone = NegeightToZero.widen(-1);
+
+    try std.testing.expectEqual(i4, @TypeOf(negone.int()));
+
+    const negthree = three.mul(negone);
+
+    try std.testing.expectEqual(Bint(-80, 0), @TypeOf(negthree));
+    try std.testing.expectEqual(i8, @TypeOf(negthree.int()));
+    try std.testing.expectEqual(-3, negthree.int());
+}
+
+test "mul - narrowing" {
+    // Interestingly, three specific bints can result in narrowing instead of widening under
+    // specific circumstances.
+    const Zero = Bint(0, 0);
+    const Negone = Bint(-1, -1);
+    const NegoneToZero = Bint(-1, 0);
+
+    const zero = Zero.widen(0);
+    const negone = Negone.widen(-1);
+    const negone_or_zero = NegoneToZero.widen(-1);
+
+    const NegoneToEight = Bint(-1, 8);
+    const one = NegoneToEight.widen(1);
+
+    try std.testing.expectEqual(i5, @TypeOf(one.int()));
+
+    const one_mul_zero = one.mul(zero);
+    try std.testing.expectEqual(u0, @TypeOf(one_mul_zero.int()));
+
+    const one_mul_negone = one.mul(negone);
+    try std.testing.expectEqual(i4, @TypeOf(one_mul_negone.int()));
+
+    const one_mul_any = one.mul(negone_or_zero);
+    try std.testing.expectEqual(i4, @TypeOf(one_mul_any.int()));
+}
+
+test "min" {
+    // This function takes the minimum of two bints (or a bint and a regular integer).
+
+    const one = Bint(-1, 1).widen(1);
+    const two = Bint(-2, 4).widen(2);
+
+    const min = one.min(two);
+
+    try std.testing.expectEqual(1, min.int());
+}
+
+test "min - narrowing" {
+    // The result of `min` narrows down the upper bound to the lowest among the two arguments.
+
+    const NegoneToEight = Bint(-1, 8);
+    const ZeroToNine = Bint(0, 9);
+    const OneToSeven = Bint(1, 7);
+
+    const Min12 = NegoneToEight.Min(ZeroToNine);
+    const Min13 = NegoneToEight.Min(OneToSeven);
+    const Min23 = ZeroToNine.Min(OneToSeven);
+
+    try std.testing.expect(Min12.max_int <= NegoneToEight.max_int);
+    try std.testing.expect(Min13.max_int <= NegoneToEight.max_int);
+
+    try std.testing.expect(Min12.max_int <= ZeroToNine.max_int);
+    try std.testing.expect(Min23.max_int <= ZeroToNine.max_int);
+
+    try std.testing.expect(Min13.max_int <= OneToSeven.max_int);
+    try std.testing.expect(Min23.max_int <= OneToSeven.max_int);
+}
+
+test "min - widening" {
+    // The result of `max` "widens" the lower bound to the lowest among the two arguments.
+    const NegtenToThirty = Bint(-10, 30);
+    const NegtwelveToSix = Bint(-12, 6);
+    const NegsixToNegtwo = Bint(-6, -2);
+
+    const Min12 = NegtenToThirty.Min(NegtwelveToSix);
+    const Min13 = NegtenToThirty.Min(NegsixToNegtwo);
+    const Min23 = NegtwelveToSix.Min(NegsixToNegtwo);
+
+    try std.testing.expect(Min12.min_int <= NegtenToThirty.min_int);
+    try std.testing.expect(Min13.min_int <= NegtenToThirty.min_int);
+
+    try std.testing.expect(Min12.min_int <= NegsixToNegtwo.min_int);
+    try std.testing.expect(Min23.min_int <= NegsixToNegtwo.min_int);
+
+    try std.testing.expect(Min13.min_int <= NegsixToNegtwo.min_int);
+    try std.testing.expect(Min23.min_int <= NegsixToNegtwo.min_int);
+}
+
+test "max" {
+    // This function returns the maximum out of two bints (or one bint and a regular integer).
+
+    const sixteen = Bint(-20, 16).widen(16);
+    const ten = Bint(5, 17).widen(10);
+
+    const max = sixteen.max(ten);
+
+    try std.testing.expectEqual(16, max.int());
+}
+
+test "max - widening" {
+    // The result of `max` widens the upper bound to the highest among the two arguments.
+
+    const NegoneToTwo = Bint(-1, 2);
+    const NegtwoToOne = Bint(-2, 1);
+    const OneToTwelve = Bint(1, 12);
+
+    const Max12 = NegoneToTwo.Max(NegtwoToOne);
+    const Max13 = NegoneToTwo.Max(OneToTwelve);
+    const Max23 = NegtwoToOne.Max(OneToTwelve);
+
+    try std.testing.expect(NegoneToTwo.max_int <= Max12.max_int);
+    try std.testing.expect(NegtwoToOne.max_int <= Max12.max_int);
+
+    try std.testing.expect(NegoneToTwo.max_int <= Max13.max_int);
+    try std.testing.expect(OneToTwelve.max_int <= Max13.max_int);
+
+    try std.testing.expect(NegtwoToOne.max_int <= Max23.max_int);
+    try std.testing.expect(OneToTwelve.max_int <= Max23.max_int);
+}
+
+test "max - narrowing" {
+    // The result of `max` narrows the lower bound to the highest among the two arguments.
+
+    const NegtwelveToNegtwo = Bint(-12, -2);
+    const SixteenToEighteen = Bint(16, 18);
+    const ThreeToTwentyfour = Bint(3, 24);
+
+    const Max12 = NegtwelveToNegtwo.Max(SixteenToEighteen);
+    const Max13 = NegtwelveToNegtwo.Max(ThreeToTwentyfour);
+    const Max23 = SixteenToEighteen.Max(ThreeToTwentyfour);
+
+    try std.testing.expect(NegtwelveToNegtwo.min_int <= Max12.min_int);
+    try std.testing.expect(SixteenToEighteen.min_int <= Max12.min_int);
+
+    try std.testing.expect(NegtwelveToNegtwo.min_int <= Max13.min_int);
+    try std.testing.expect(ThreeToTwentyfour.min_int <= Max13.min_int);
+
+    try std.testing.expect(SixteenToEighteen.min_int <= Max23.min_int);
+    try std.testing.expect(ThreeToTwentyfour.min_int <= Max23.min_int);
+}
+
+test "abs" {
+    // The "abs" function return the abslute value of a bint, i.e. itself when it's positive, its
+    // opposite when it's negative.
+
+    const negative = Bint(-10, 20).widen(-8);
+    const positive = Bint(-5, 4).widen(3);
+
+    try std.testing.expectEqual(8, negative.abs().int());
+    try std.testing.expectEqual(3, positive.abs().int());
+}
+
+test "abs - narrowing" {
+    // The `abs` function is sometimes narrowing, when the negative part of a bint type is smaller
+    // than the positive part.
+
+    const NegtenToTwenty = Bint(-10, 20);
+
+    // This can represent `-10..=20`, so `-32..<32`.
+    try std.testing.expectEqual(i6, NegtenToTwenty.Backing);
+    // This can represent `0..=20`, so `0..<32`.
+    try std.testing.expectEqual(u5, NegtenToTwenty.Abs.Backing);
+}
+
+test "floor" {
+    // The `floor` function ensures that a bint is at least as big as a given bint or regular
+    // integer. If not, it'll fail.
+
+    const NegthreeToFour = Bint(-3, 4);
+
+    const two = NegthreeToFour.widen(2);
+    const ensured_its_positive = try two.floor(
+        // by using `0` as the floor, we know that a passing result is always >=0
+        bint.fromComptime(0));
+
+    try std.testing.expect(0 <= ensured_its_positive.int());
+    try std.testing.expectError(error.OutOfBoundsInteger, two.floor(
+        // Since the floor is higher than `two`, the operation fails
+        @as(usize, 3)));
+}
+
+test "floor - narrowing" {
+    // The `floor` operation is always narrowing, or at least never widening. It narrows the lower
+    // bound of the bint by the lower bound of the floor if it's higher. And unlike `max`, it
+    // doesn't touch the upper bound.
+
+    const NegeightToThree = Bint(-8, 3);
+    const NegthreeToSeven = Bint(-3, 7);
+
+    const two = NegeightToThree.widen(2);
+    const negtwo = NegthreeToSeven.widen(-2);
+
+    // Now, we know that floor isn't less than the lower bound of `negtwo`, i.e. `-3`.
+    const floored = two.floor(negtwo) catch unreachable;
+    const Floored = @TypeOf(floored);
+
+    try std.testing.expectEqual(Bint(-3, 3), Floored);
+    try std.testing.expectEqual(i4, @TypeOf(two.int()));
+    try std.testing.expectEqual(i3, @TypeOf(floored.int()));
+}
+
+test "floor - comptime smartness" {
+    // The `floor` function is "comptime smart". If by the type of its arguments, it can already
+    // tell whether the operation is passing or failing, it'll make the other path dead to Zig.
+
+    const ZeroToEight = Bint(0, 8);
+
+    var four = ZeroToEight.widen(0);
+    // We're ensuring that this doesn't only work with comptime values.
+    _ = &four;
+
+    _ = four.floor(Bint(-10, -5).widen(-6)) catch
+        // The path of this compile error won't ever be reached because `floor` knows from its type
+        // that it can't error: a `Bint(-10, -5)` is always smaller than a `Bint(0, 8)` anyway.
+        @compileError("This floor operation must be guaranteed to pass!");
+
+    // Although this is weirder to think about, you can also have the passing path as a dead path.
+    if (four.floor(Bint(9, 10).widen(10))) |_|
+        // A `Bint(9, 10)` is always greater than a `Bint(0, 8)`.
+        @compileError("This floor operation must be guaranteed to fail!")
+    else |fail|
+        try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
+}
+
+test "ceil" {
+    // The `ceil` function ensures that a bint is at least as small as another bint or regular
+    // integer. If not, it'll fail.
+
+    const ten = Bint(8, 16).widen(10);
+    const eleven = Bint(8, 12).widen(11);
+
+    const less_than_eleven = try ten.ceil(eleven);
+    try std.testing.expect(less_than_eleven.int() <= 11);
+
+    // If the first bint is bigger than the second argument, it'll fail.
+    try std.testing.expectError(
+        error.OutOfBoundsInteger,
+        eleven.ceil(ten),
+    );
+}
+
+test "ceil - narrowing" {
+    // The `ceil` operation is always narrowing, or at least never widening. It narrows the upper
+    // bound of the bint to that of the ceil, and fails if it's higher. And unlike `min`, it
+    // doesn't touch the lower bound.
+
+    const six = Bint(-1, 16).widen(6);
+    const seven = Bint(0, 10).widen(7);
+
+    // Now, we know that `ceiled` is necessarily lower or equal to `seven`, and notably its upper
+    // bound `10`.
+    const ceiled = six.ceil(seven) catch unreachable;
+    const Ceiled = @TypeOf(ceiled);
+
+    try std.testing.expectEqual(Bint(-1, 10), Ceiled);
+    try std.testing.expectEqual(i6, @TypeOf(six.int()));
+    try std.testing.expectEqual(i5, @TypeOf(ceiled.int()));
+}
+
+test "ceil - comptime smartness" {
+    // The `ceil` function is "comptime smart". If by the type of its argument, it can tell whether
+    // it'll be passing or failing, then it'll make the other path unreachable at compile-time.
+
+    const NegfourToFive = Bint(-4, 5);
+
+    var two = NegfourToFive.widen(2);
+    // Here we're ensuring that this works with runtime values as well.
+    _ = &two;
+
+    _ = two.ceil(Bint(5, 12).widen(6)) catch
+        // This error will never be triggered because Zig knows a `Bint(5, 12)` is always bigger
+        // than a `Bint(-4, 5)`.
+        @compileError("The ceil should be guaranteed to be higher!");
+
+    // Interestingly, you can also ensure the operation must always fail.
+    if (two.ceil(Bint(-6, -5).widen(-5))) |_|
+        // This will never be reached.
+        @compileError("The ceil should always be too low!")
+    else |fail|
+        // This will always be reached.
+        try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
+}

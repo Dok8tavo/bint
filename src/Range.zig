@@ -1,341 +1,316 @@
-upper: AnyInt,
-lower: AnyInt,
+lower: comptime_int,
+upper: comptime_int,
 
 const std = @import("std");
 
-// TODO: document this weird decision, to avoid the weird cases of `min < 0 and -min_min < max`
-pub const AnyInt = i65535;
-
-pub const any_max = std.math.maxInt(AnyInt);
-pub const any_min = std.math.minInt(AnyInt);
-
+const MaxInt = i65535;
 const Range = @This();
 
-pub const FromError = error{
-    UpperTooBig,
-    LowerTooSmall,
-} || FromIntError;
+const min_lower_bound = std.math.minInt(MaxInt);
+const max_upper_bound = std.math.maxInt(MaxInt);
 
-pub fn from(lower: anytype, upper: anytype) FromError!Range {
-    if (lower < any_min)
-        return FromError.LowerTooSmall;
-
-    if (any_max < upper)
-        return FromError.UpperTooBig;
-
-    return fromInt(@intCast(lower), @intCast(upper));
-}
-
-pub const FromIntError = error{LowerOverUpper};
-
-pub fn fromInt(lower: AnyInt, upper: AnyInt) FromIntError!Range {
-    if (upper < lower)
-        return FromIntError.LowerOverUpper;
-
-    return .{ .upper = upper, .lower = lower };
-}
-
-pub fn fromComptime(comptime lower: comptime_int, comptime upper: comptime_int) Range {
-    return from(lower, upper) catch |e| errorComptime(e, lower, upper);
-}
-
-pub fn splat(int: AnyInt) Range {
-    return .{ .lower = int, .upper = int };
-}
-
-pub fn errorComptime(
-    comptime e: FromIntError,
-    comptime lower: anytype,
-    comptime upper: anytype,
-) noreturn {
-    switch (e) {
-        error.LowerOverUpper => @compileError(std.fmt.comptimePrint(
-            \\The lower bound must be less or equal to the upper bound. 
-            \\Found {} as the lower bound and {} as the upper bound. 
-        ,
-            .{ lower, upper },
-        )),
-        error.LowerTooSmall => @compileError(std.fmt.comptimePrint(
-            "The lower bound parameter must be at least {}. Found {}.",
-            .{ any_min, lower },
-        )),
-        error.UpperTooBig => @compileError(std.fmt.comptimePrint(
-            "The upper bound must be at most {}. Found {}.",
-            .{ any_max, upper },
-        )),
-    }
-}
-
-pub fn middle(r: Range) AnyInt {
-    return @divFloor(r.upper, 2) + @divFloor(r.lower, 2) +
-        @intFromBool(@rem(r.upper, 2) != 0 and @rem(r.lower, 2) != 0);
-}
-
-pub fn unique(r: Range) ?AnyInt {
-    return if (r.lower == r.upper) r.lower else null;
-}
-
-pub fn unite(r1: Range, r2: Range) Range {
+pub fn from(lower: comptime_int, upper: comptime_int) Range {
     return .{
-        .lower = @min(r1.lower, r2.lower),
-        .upper = @max(r1.upper, r2.upper),
+        .lower = lower,
+        .upper = upper,
     };
 }
 
-pub fn max(r1: Range, r2: Range) Range {
-    return .{
-        .lower = @max(r1.lower, r2.lower),
-        .upper = @max(r1.upper, r2.upper),
+pub fn splat(scalar: comptime_int) Range {
+    return from(scalar, scalar);
+}
+
+pub fn hasInt(r: Range, int: comptime_int) bool {
+    return r.lower <= int and int <= r.upper;
+}
+
+pub fn hasRange(r1: Range, r2: Range) bool {
+    return r1.lower <= r2.lower and r2.upper <= r1.upper;
+}
+
+pub fn Values(r: Range) type {
+    return struct {
+        curr: ?Backing = r.lower,
+
+        const Backing = std.math.IntFittingRange(r.lower, r.upper);
+
+        pub fn next(values: *@This()) ?comptime_int {
+            return if (values.curr) |curr| {
+                defer values.curr = if (curr == r.upper) null else curr + 1;
+                return curr;
+            } else null;
+        }
     };
+}
+
+pub fn SubRanges(r: Range) type {
+    return struct {
+        curr: ?Range = .{
+            .lower = r.lower,
+            .upper = r.lower,
+        },
+
+        pub fn next(subranges: *@This()) ?Range {
+            return if (subranges.curr) |curr| {
+                defer {
+                    subranges.curr = if (curr.upper != r.upper) from(
+                        curr.lower,
+                        curr.upper + 1,
+                    ) else if (curr.lower != r.upper) from(
+                        curr.lower + 1,
+                        curr.lower + 1,
+                    ) else null;
+                }
+
+                return curr;
+            } else null;
+        }
+    };
+}
+
+pub fn add(r1: Range, r2: Range) Range {
+    return from(
+        r1.lower + r2.lower,
+        r1.upper + r2.upper,
+    );
+}
+
+pub fn sub(r1: Range, r2: Range) Range {
+    return from(
+        r1.lower - r2.upper,
+        r1.upper - r2.lower,
+    );
+}
+
+pub fn mul(r1: Range, r2: Range) Range {
+    const uu = r1.upper * r2.upper;
+    const ul = r1.upper * r2.lower;
+    const lu = r1.lower * r2.upper;
+    const ll = r1.lower * r2.lower;
+    return from(
+        @min(uu, ul, lu, ll),
+        @max(uu, ul, lu, ll),
+    );
 }
 
 pub fn min(r1: Range, r2: Range) Range {
-    return .{
-        .lower = @min(r1.lower, r2.lower),
-        .upper = @min(r1.upper, r2.upper),
-    };
+    return from(
+        @min(r1.lower, r2.lower),
+        @min(r1.upper, r2.upper),
+    );
 }
 
-pub const Error = error{LowerTooSmall} || NegError;
-
-pub fn add(r1: Range, r2: Range) Error!Range {
-    return .{
-        .lower = std.math.add(AnyInt, r1.lower, r2.lower) catch return Error.LowerTooSmall,
-        .upper = std.math.add(AnyInt, r1.upper, r2.upper) catch return Error.UpperTooBig,
-    };
+pub fn max(r1: Range, r2: Range) Range {
+    return from(
+        @max(r1.lower, r2.lower),
+        @max(r1.upper, r2.upper),
+    );
 }
 
-pub fn sub(r1: Range, r2: Range) Error!Range {
-    return .{
-        .lower = std.math.sub(AnyInt, r1.lower, r2.upper) catch return Error.LowerTooSmall,
-        .upper = std.math.sub(AnyInt, r1.upper, r2.lower) catch return Error.UpperTooBig,
-    };
+pub fn abs(r: Range) Range {
+    return from(
+        @min(@abs(r.lower), @abs(r.upper)),
+        @max(@abs(r.lower), @abs(r.upper)),
+    );
 }
 
-pub const NegError = error{UpperTooBig};
-pub fn neg(r: Range) NegError!Range {
-    return .{
-        .lower = -r.upper,
-        .upper = std.math.sub(AnyInt, 0, r.lower) catch return NegError.UpperTooBig,
-    };
-}
-
-pub fn abs(r: Range) Error!Range {
-    const lower = @min(@abs(r.lower), @abs(r.upper));
-    const upper = @max(@abs(r.lower), @abs(r.upper));
-    return from(lower, upper) catch |e| switch (e) {
-        FromError.LowerOverUpper => unreachable,
-        FromError.LowerTooSmall => unreachable,
-        FromError.UpperTooBig => Error.UpperTooBig,
-    };
-}
-
-pub fn mul(r1: Range, r2: Range) Error!Range {
-    const ll = std.math.mul(AnyInt, r1.lower, r2.lower) catch
-        return if ((0 < r1.lower) == (0 < r2.lower)) Error.UpperTooBig else Error.LowerTooSmall;
-
-    const lu = std.math.mul(AnyInt, r1.lower, r2.upper) catch
-        return if ((0 < r1.lower) == (0 < r2.upper)) Error.UpperTooBig else Error.LowerTooSmall;
-
-    const ul = std.math.mul(AnyInt, r1.upper, r2.lower) catch
-        return if ((0 < r1.upper) == (0 < r2.lower)) Error.UpperTooBig else Error.LowerTooSmall;
-
-    const uu = std.math.mul(AnyInt, r1.upper, r2.upper) catch
-        return if ((0 < r1.upper) == (0 < r2.upper)) Error.UpperTooBig else Error.LowerTooSmall;
-
-    return .{
-        .lower = @min(ll, lu, ul, uu),
-        .upper = @max(ll, lu, ul, uu),
-    };
-}
-
-pub const ClampType = union(enum) {
-    must_error,
-    cant_error: Range,
-    could_error: Range,
-};
-
-pub fn floor(r1: Range, r2: Range) ClampType {
-    if (r1.upper < r2.lower)
-        return .must_error;
-
-    const r: Range = .{
-        .upper = r1.upper,
-        .lower = @max(r1.lower, r2.lower),
-    };
-
+pub fn closest(r1: Range, r2: Range) Range {
     if (r2.upper <= r1.lower)
-        return .{ .cant_error = r };
+        return splat(r1.lower);
 
-    return .{ .could_error = r };
+    if (r1.upper <= r2.lower)
+        return splat(r1.upper);
+
+    return from(
+        @max(r1.lower, r2.lower),
+        @min(r1.upper, r2.upper),
+    );
 }
 
-pub fn ceil(r1: Range, r2: Range) ClampType {
-    if (r2.upper < r1.lower)
-        return .must_error;
-
-    const r: Range = .{
-        .upper = @min(r1.upper, r2.upper),
-        .lower = r1.lower,
-    };
-
-    if (r1.upper <= r1.lower)
-        return .{ .cant_error = r };
-
-    return .{ .could_error = r };
+pub fn middle(r: Range) comptime_int {
+    return @divFloor(r.upper + r.lower, 2);
 }
 
-pub const FurthestType = enum(u3) {
-    equal = 0,
-    upper = 0b001,
-    lower = 0b010,
+pub fn middleIsExact(r: Range) bool {
+    const m = r.middle();
+    return r.upper - m == m - r.lower;
+}
+
+pub fn unique(r: Range) ?comptime_int {
+    return if (r.lower == r.upper) r.lower else null;
+}
+
+pub const Furthest = enum(u3) {
+    lower = 0b001,
+    upper = 0b010,
+
     equid = 0b100,
-    any = 0b111,
-    _,
 
-    pub fn both(ft: FurthestType, addee: FurthestType) FurthestType {
-        return @enumFromInt(ft.int() | addee.int());
+    lower_or_equid = 0b101,
+    upper_or_equid = 0b110,
+
+    lower_or_upper = 0b011,
+    lower_or_upper_or_equid = 0b111,
+
+    equal = 0,
+
+    pub fn has(f1: Furthest, f2: Furthest) bool {
+        return ~f1.int() & f2.int() == 0;
     }
 
-    pub fn has(ft: FurthestType, hadden: FurthestType) bool {
-        return 0 == ft.int() & ~hadden.int();
+    pub fn add(f1: Furthest, f2: Furthest) Furthest {
+        return @enumFromInt(f1.int() | f2.int());
     }
 
-    fn int(ft: FurthestType) u4 {
-        return @intFromEnum(ft);
+    fn int(f: Furthest) u3 {
+        return @intFromEnum(f);
     }
 };
 
-pub fn furthest(r1: Range, r2: Range) FurthestType {
-    if (r1.lower == r2.upper)
+pub fn furthest(r1: Range, r2: Range) Furthest {
+    if (r1.unique()) |_|
         return .equal;
 
+    var f: Furthest = @enumFromInt(0);
+
     const m = r1.middle();
-    const can_equid = r1.upper - m == m - r1.lower;
 
-    const equid = can_equid and r2.hasInt(m);
-    const lower = r2.lower < m or (!can_equid and r2.lower == m);
-    const upper = m < r2.upper;
+    if (r1.middleIsExact()) {
+        if (r2.hasInt(m))
+            f = f.add(.equid);
 
-    var f: FurthestType = @enumFromInt(0);
+        if (r2.lower <= m)
+            f = f.add(.upper);
 
-    if (equid) f = .both(f, .equid);
-    if (lower) f = .both(f, .lower);
-    if (upper) f = .both(f, .upper);
+        if (m <= r2.upper)
+            f = f.add(.lower);
+    } else {
+        if (r2.lower <= m)
+            f = f.add(.upper);
+
+        if (m < r2.upper)
+            f = f.add(.lower);
+    }
 
     return f;
 }
 
-pub fn closest(r1: Range, r2: Range) Range {
-    if (r1.upper <= r2.lower) return .{
-        .lower = r1.upper,
-        .upper = r1.upper,
-    };
+pub const MayFail = union(enum) {
+    must_fail,
+    must_pass: Range,
+    can_both: Range,
+};
 
-    if (r2.upper <= r1.lower) return .{
-        .lower = r1.lower,
-        .upper = r1.lower,
-    };
+pub fn floor(r1: Range, r2: Range) MayFail {
+    if (r2.upper <= r1.lower)
+        return .{ .must_pass = r1 };
+
+    if (r1.upper < r2.lower)
+        return .must_fail;
 
     return .{
-        .upper = @min(r1.upper, r2.upper),
-        .lower = @max(r1.lower, r2.lower),
+        .can_both = from(r2.lower, r1.upper),
     };
 }
 
-const Div = union(enum) {
-    must_error,
-    cant_error: Range,
-    could_error: Range,
-};
+pub fn ceil(r1: Range, r2: Range) MayFail {
+    if (r1.upper <= r2.lower)
+        return .{ .must_pass = r1 };
 
-pub const DivRounding = enum {
-    floor,
+    if (r2.upper < r1.lower)
+        return .must_fail;
+
+    return .{
+        .can_both = from(r1.lower, r2.upper),
+    };
+}
+
+pub fn @"union"(r1: Range, r2: Range) Range {
+    return from(
+        @min(r1.lower, r2.lower),
+        @max(r1.upper, r2.upper),
+    );
+}
+
+pub const Rounding = enum {
     trunc,
-    // TODO: exact
+    floor,
 };
 
-pub fn div(r1: Range, r2: Range, rounding: DivRounding) Div {
+pub fn div(r1: Range, r: Rounding, r2: Range) MayFail {
     if (r2.unique()) |u|
         if (u == 0)
-            return .must_error;
+            return .must_fail;
 
-    const can_error = r2.hasInt(0);
-    const r = r1.fraction(r2, rounding).?;
-    return if (can_error) .{ .could_error = r } else .{ .cant_error = r };
-}
+    const pos_numerator = r1.numerator(true);
+    const neg_numerator = r1.numerator(false);
+    const pos_denominator = r2.denominator(true);
+    const neg_denominator = r2.denominator(false);
 
-fn fraction(num: Range, den: Range, rounding: DivRounding) ?Range {
-    const biggest: ?AnyInt = fractionInt(num, den, true, true, rounding) orelse
-        fractionInt(num, den, false, false, rounding);
+    const pos_by_pos: ?Range = if (pos_numerator != null and pos_denominator != null) from(
+        divInt(r, pos_numerator.?.lower, pos_denominator.?.upper),
+        divInt(r, pos_numerator.?.upper, pos_denominator.?.lower),
+    ) else null;
 
-    const smallest: ?AnyInt = fractionInt(num, den, false, true, rounding) orelse
-        fractionInt(num, den, true, false, rounding);
+    const pos_by_neg: ?Range = if (pos_numerator != null and neg_denominator != null) from(
+        divInt(r, pos_numerator.?.upper, neg_denominator.?.lower),
+        divInt(r, pos_numerator.?.lower, neg_denominator.?.upper),
+    ) else null;
 
-    if (biggest == null)
-        return null;
+    const neg_by_pos: ?Range = if (neg_numerator != null and pos_denominator != null) from(
+        divInt(r, neg_numerator.?.upper, pos_denominator.?.lower),
+        divInt(r, neg_numerator.?.lower, pos_denominator.?.upper),
+    ) else null;
 
-    return .{
-        .upper = biggest.?,
-        .lower = smallest.?,
+    const neg_by_neg: ?Range = if (neg_numerator != null and neg_denominator != null) from(
+        divInt(r, neg_numerator.?.lower, neg_denominator.?.upper),
+        divInt(r, neg_numerator.?.upper, neg_denominator.?.lower),
+    ) else null;
+
+    var result: Range = if (pos_by_pos) |tmp|
+        tmp
+    else if (pos_by_neg) |tmp|
+        tmp
+    else if (neg_by_pos) |tmp|
+        tmp
+    else
+        neg_by_neg;
+
+    if (pos_by_pos) |tmp| result = result.@"union"(tmp);
+    if (pos_by_neg) |tmp| result = result.@"union"(tmp);
+    if (neg_by_pos) |tmp| result = result.@"union"(tmp);
+    if (neg_by_neg) |tmp| result = result.@"union"(tmp);
+
+    return if (r2.hasInt(0)) .{
+        .can_both = result,
+    } else .{
+        .must_pass = result,
     };
 }
 
-fn fractionInt(
-    num: Range,
-    den: Range,
-    positive: bool,
-    biggest: bool,
-    rounding: DivRounding,
-) ?AnyInt {
-    const pp: ?AnyInt = if (num.numerator(positive)) |n| pp: {
-        if (den.denominator(positive)) |d| break :pp switch (rounding) {
-            .floor => if (positive == biggest) @divFloor(n.upper, d.lower) else @divFloor(n.lower, d.upper),
-            .trunc => if (positive == biggest) @divTrunc(n.upper, d.lower) else @divTrunc(n.lower, d.upper),
-        };
-    } else null;
-
-    const nn: ?AnyInt = if (num.numerator(!positive)) |n| nn: {
-        if (den.denominator(!positive)) |d| break :nn switch (rounding) {
-            .floor => if (positive == biggest) @divFloor(n.lower, d.upper) else @divFloor(n.upper, d.lower),
-            .trunc => if (positive == biggest) @divTrunc(n.lower, d.upper) else @divTrunc(n.upper, d.lower),
-        };
-    } else null;
-
-    if (pp) |p| if (nn) |n|
-        return if (biggest == positive) @max(p, n) else @min(p, n);
-
-    return pp orelse nn orelse null;
-}
-
-fn numerator(r: Range, positive: bool) ?Range {
-    const clamped = switch (positive) {
-        true => r.floor(.splat(0)),
-        false => r.ceil(.splat(0)),
-    };
-
-    return switch (clamped) {
-        .must_error => null,
-        else => |n| n,
+pub fn divInt(r: Rounding, a: comptime_int, b: comptime_int) comptime_int {
+    return switch (r) {
+        .floor => @divFloor(a, b),
+        .trunc => @divTrunc(a, b),
     };
 }
 
-fn denominator(r: Range, positive: bool) ?Range {
-    const clamped = switch (positive) {
-        true => r.floor(.splat(1)),
-        false => r.ceil(.splat(-1)),
-    };
-
-    return switch (clamped) {
-        .must_error => null,
-        else => |d| d,
+pub fn denominator(r: Range, pos: bool) ?Range {
+    const rden = if (pos) r.floor(splat(1)) else r.ceil(splat(-1));
+    return switch (rden) {
+        .must_fail => null,
+        .can_both, .must_pass => |pass| pass,
     };
 }
 
-pub fn hasInt(r: Range, int: AnyInt) bool {
-    return r.lower <= int and r.upper <= int;
+pub fn numerator(r: Range, pos: bool) ?Range {
+    const rden = if (pos) r.floor(splat(0)) else r.ceil(splat(0));
+    return switch (rden) {
+        .must_fail => null,
+        .can_both, .must_pass => |pass| pass,
+    };
 }
 
-pub fn hasRange(r1: Range, r2: Range) bool {
-    return r1.hasInt(r2.lower) and r1.hasInt(r2.upper);
+inline fn compileError(comptime fmt: []const u8, comptime args: anytype) noreturn {
+    @compileError(std.fmt.comptimePrint(fmt, args));
 }
