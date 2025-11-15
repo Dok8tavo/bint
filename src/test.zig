@@ -601,3 +601,80 @@ test "ceil - comptime smartness" {
         // This will always be reached.
         try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
 }
+
+test "closest" {
+    // This function returns the closest bint within bounds to a given bint or regular integer.
+
+    const NegtwoToOne = Bint(-2, 1);
+
+    const negthree: i8 = -3;
+    const negtwo = Bint(-100, 100).widen(-2);
+    const zero: usize = 0;
+    const two: c_int = 2;
+    const three: u8 = 3;
+
+    try std.testing.expectEqual(-2, NegtwoToOne.closest(negthree).int());
+    try std.testing.expectEqual(-2, NegtwoToOne.closest(negtwo).int());
+    try std.testing.expectEqual(0, NegtwoToOne.closest(zero).int());
+    try std.testing.expectEqual(1, NegtwoToOne.closest(two).int());
+    try std.testing.expectEqual(1, NegtwoToOne.closest(three).int());
+}
+
+test "closest - narrowing" {
+    // The `closest` function can narrow down its return type when its argument can't represent
+    // some values that are valid for the bint it's trying to make.
+
+    const Byte = Bint(0, 255);
+
+    try std.testing.expectEqual(
+        // A `u8` can represent `-128..<128`, but since the number it's trying to make is `0..<256`
+        // It creates a `0..<128`.
+        Bint(0, 127),
+        Byte.Closest(i8),
+    );
+
+    try std.testing.expectEqual(
+        Bint(10, 255),
+        Byte.Closest(Bint(10, 1000)),
+    );
+
+    try std.testing.expectEqual(
+        Bint(25, 36),
+        Byte.Closest(Bint(25, 36)),
+    );
+
+    // When its argument can't even represent a valid value, then the result is a known bint:
+
+    try std.testing.expectEqual(
+        Bint(0, 0),
+        // It knows that a number within `-10..=-1` is necessarily smaller than one within
+        // `0..=255`, so it always returns the lower bound.
+        Byte.Closest(Bint(-10, -1)),
+    );
+
+    try std.testing.expectEqual(
+        Bint(255, 255),
+        // It knows that a number within `1000..=2000` is necessarily bigger than one within
+        // `0..=255`, so it always returns the upper bound.
+        Byte.Closest(Bint(1000, 2000)),
+    );
+
+    // When the argument is able to represent all valid values, the return type is the "namespace"
+    // Bint.
+    try std.testing.expectEqual(
+        Byte,
+        Byte.Closest(isize),
+    );
+
+    try std.testing.expectEqual(
+        Byte,
+        Byte.Closest(Byte),
+    );
+
+    // This means that one can always use `YourBint.widen` on the result of `YourBint.closest`
+    const eight: Byte = .widen(Byte.closest(@as(i8, 8)));
+    try std.testing.expectEqual(8, eight.int());
+
+    const zero: Byte = .widen(Byte.closest(@as(isize, -100)));
+    try std.testing.expectEqual(0, zero.int());
+}
