@@ -840,3 +840,16 @@ test "furthest - comptime smartness" {
         else => {},
     }
 }
+
+test "expect" {
+    // This function could be useful if you get a bint from somewhere and not sure if it is valid.
+    // This can happen in two scenarios:
+    // - the bint was initialized with `@enumFromInt(...)` with an unsound logic,
+    // - the bint was left undefined.
+
+    var not_eight: Bint(0, 7) = @enumFromInt(8);
+    try std.testing.expectError(error.OutOfBoundsInteger, not_eight.expect());
+
+    not_eight = @enumFromInt(7);
+    try not_eight.expect();
+}
