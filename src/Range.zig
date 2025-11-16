@@ -179,20 +179,27 @@ pub fn furthest(r1: Range, r2: Range) Furthest {
         if (r2.hasInt(m))
             f = f.add(.equid);
 
-        if (r2.lower <= m)
-            f = f.add(.upper);
-
-        if (m <= r2.upper)
-            f = f.add(.lower);
-    } else {
-        if (r2.lower <= m)
-            f = f.add(.upper);
-
         if (m < r2.upper)
             f = f.add(.lower);
+
+        if (r2.lower < m)
+            f = f.add(.upper);
+    } else {
+        if (m < r2.upper)
+            f = f.add(.lower);
+
+        if (r2.lower <= m)
+            f = f.add(.upper);
     }
 
     return f;
+}
+
+test furthest {
+    try std.testing.expect(furthest(
+        from(100, 200),
+        from(151, 250),
+    ) == .lower);
 }
 
 pub const MayFail = union(enum) {

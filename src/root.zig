@@ -201,37 +201,41 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
 
             const rf = range.furthest(Other.range);
 
-            const Upper = if (rf.has(.upper)) void else noreturn;
-            const Lower = if (rf.has(.lower)) void else noreturn;
+            const Upper = if (rf.has(.upper)) FromComptime(max_int) else noreturn;
+            const Lower = if (rf.has(.lower)) FromComptime(min_int) else noreturn;
+            const Equal = if (rf == .equal) FromComptime(mid_int) else noreturn;
             const Equid = if (rf.has(.equid)) void else noreturn;
-            const Equal = if (rf == .equal) void else noreturn;
 
             return union(enum) {
                 /// The upper bound is furthest.
                 upper: Upper,
                 /// The lower bound is furthest.
                 lower: Lower,
-                /// The upper and lower bound aren't equal, but equidistant.
-                equid: Equid,
                 /// The upper and lower bound are equals anyway.
                 equal: Equal,
+                /// The upper and lower bound aren't equal, but equidistant.
+                equid: Equid,
 
                 pub fn int(f: Furthest(T)) ?Backing {
                     return switch (f) {
-                        .equal => null,
                         .upper => max_int,
                         .lower => min_int,
-                        .equid => unique_int.?,
+                        .equal => unique_int.?,
+                        .equid => null,
                     };
                 }
 
                 pub fn bint(f: Furthest(T)) ?Self {
                     return switch (f) {
-                        .equal => null,
                         .upper => max_bint,
                         .lower => min_bint,
-                        .equid => mid_bint,
+                        .equal => mid_bint,
+                        .equid => null,
                     };
+                }
+
+                pub fn has(comptime field: std.meta.FieldEnum(@This())) bool {
+                    return @FieldType(@This(), @tagName(field)) != noreturn;
                 }
             };
         }
@@ -564,27 +568,34 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             return @enumFromInt(i.int());
         }
 
-        pub fn furthest(anyint: anytype) Furthest(From(@TypeOf(anyint))) {
+        pub fn furthest(anyint: anytype) Furthest(@TypeOf(anyint)) {
             const i = from(anyint);
             const Int = @TypeOf(i);
 
-            if (comptime Self.unique_int) |_|
-                return .equid;
+            const result = comptime range.furthest(Int.range);
 
-            if (comptime Int.max_int < Self.min_int)
-                return .upper;
-
-            if (comptime Self.max_int < Int.min_int)
-                return .lower;
-
-            if (comptime Self.mid_int * 2 == Self.max_int + Self.min_int)
-                if (i.int() == Self.mid_int)
-                    return .equal;
-
-            if (i.int() <= Self.mid_int)
-                return .upper;
-
-            return .lower;
+            return switch (result) {
+                .equal => .{ .equal = .widen(mid_int) },
+                .lower => .{ .lower = .widen(min_int) },
+                .upper => .{ .upper = .widen(max_int) },
+                .equid => .equid,
+                .lower_or_equid => if (i.int() == mid_int) .equid else .{
+                    .lower = .widen(min_int),
+                },
+                .upper_or_equid => if (i.int() == mid_int) .equid else .{
+                    .upper = .widen(max_int),
+                },
+                .lower_or_upper => if (i.int() <= mid_int) .{
+                    .lower = .widen(min_int),
+                } else .{
+                    .upper = .widen(max_int),
+                },
+                .lower_or_upper_or_equid => switch (i.ord(mid_bint)) {
+                    .gt => .{ .lower = .widen(min_int) },
+                    .eq => .equid,
+                    .lt => .{ .upper = .widen(max_int) },
+                },
+            };
         }
 
         pub fn ord(s: Self, other: anytype) std.math.Order {

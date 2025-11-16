@@ -678,3 +678,165 @@ test "closest - narrowing" {
     const zero: Byte = .widen(Byte.closest(@as(isize, -100)));
     try std.testing.expectEqual(0, zero.int());
 }
+
+test "furthest" {
+    // The `furthest` function takes a bint or a regular integer as argument and returns the number
+    // within the range of the namespace it's called from that's the furthest from.
+
+    // Since the furthest number is always one of the bounds, the return type is different than
+    // just a bint. To allow further narrowing, it treats separately four different scenarios:
+    // 1. `upper`: the upper bound is the furthest,
+    // 2. `lower`: the lower bound is the furthest,
+    // 3. `equal`: the lower and upper bounds are equal anyway,
+    // 4. `equid`: the lower and upper bounds aren't equal but equidistant.
+
+    const furthest = Bint(0, 100).furthest(@as(i8, 55));
+    switch (furthest) {
+        .upper => |upper| {
+            // In this scenario, we would've given `furthest` a number under 50.
+            try std.testing.expectEqual(Bint(100, 100), @TypeOf(upper));
+        },
+        .lower => |lower| {
+            // This is what happens, since we've given `furthest a number above 50.
+            try std.testing.expectEqual(Bint(0, 0), @TypeOf(lower));
+        },
+        .equid => |equid| {
+            // In this scenario, we would've given `furthest` exactly 50.
+            try std.testing.expectEqual(void, @TypeOf(equid));
+        },
+        .equal => |equal| {
+            // This isn't possible, but if we had a `Bint(n, n)` instead, it would've been the only
+            // possibility. You might want to see `furthest - comptime smartnesss` for more info.
+            _ = equal;
+        },
+    }
+
+    try std.testing.expect(.lower == furthest);
+
+    // You can get it as a bint
+    const as_bint = furthest.bint() orelse
+        // This would've happened in an `.equid` scenario, where it can't make a decision between
+        // the lower and upper bound.
+        return error.ExpectedLower;
+
+    // Or directly as a regular integer
+    const as_int = furthest.int() orelse
+        // Same as before.
+        return error.ExpectedLower;
+
+    try std.testing.expectEqual(0, as_bint.int());
+    try std.testing.expectEqual(0, as_int);
+
+    // This is different than accessing the payload, since you get the wide version, the original
+    // Bint.
+    try std.testing.expectEqual(Bint(0, 100), @TypeOf(as_bint));
+    try std.testing.expectEqual(Bint(0, 100).Backing, @TypeOf(as_int));
+}
+
+test "furthest - comptime smartness" {
+    // The `furthest` function distinguishes four scenarios and returns a union. But when one of
+    // these scenarios can be determined impossible at compile-time, the corresponding variant is
+    // defined as `noreturn`, and makes the paths that unwrap it dead code.
+
+    // Obviously a `i4` is within `-16..<16`, and therefore further from 200 than 100.
+    var only_upper = Bint(100, 200).furthest(@as(i4, 3));
+    _ = &only_upper; // making sure it doesn't just work with comptime known values
+
+    const OnlyUpper = @TypeOf(only_upper);
+    // Those are impossible
+    try std.testing.expectEqual(noreturn, @FieldType(OnlyUpper, "lower"));
+    try std.testing.expectEqual(noreturn, @FieldType(OnlyUpper, "equid"));
+    try std.testing.expectEqual(noreturn, @FieldType(OnlyUpper, "equal"));
+    // This is possible
+    try std.testing.expectEqual(Bint(200, 200), @FieldType(OnlyUpper, "upper"));
+
+    switch (only_upper) {
+        .upper => |upper| {
+            // This is the only path that actually can happen.
+            try std.testing.expectEqual(200, upper.int());
+        },
+        .lower => {
+            // This won't even get evaluated, since `lower` is `noreturn`.
+            @compileError("The `.lower` variant shouldn't be reachable!");
+        },
+        .equid => {
+            // This branch not getting evaluated means that this won't tigger any error:
+            try std.testing.expectEqual(42, 69);
+        },
+        .equal => |equal| {
+            // Nor this:
+            try std.testing.expectEqual(123467890, equal.int());
+
+            // Nor this, which can be useful for generic code:
+            try std.testing.expectEqual(Bint(12, 12), @TypeOf(equal));
+
+            // Not even this:
+            if (Bint(1000, 1000) != @TypeOf(equal))
+                @compileError("This is not what I expected!");
+
+            // Or this, which is strange:
+            _ = Bint("Wrong argument", .funny);
+
+            // Weird...
+            _ = equal.i_dont_even_exist_lol;
+            const not_a_string: "is" = .not_a_string;
+            _ = not_a_string;
+
+            // crazy
+            return error.THIS_IS_NOT_AN_ERROR_MUHAHAHA;
+        },
+    }
+
+    var only_lower = Bint(100, 200).furthest(Bint(151, 250).widen(180));
+    _ = &only_lower;
+    switch (only_lower) {
+        .lower => |lower| try std.testing.expectEqual(100, lower.int()),
+        else => @compileError("Impossible!"),
+    }
+
+    var only_equal = Bint(150, 150).furthest(@as(u8, 16));
+    _ = &only_equal;
+    switch (only_equal) {
+        .equal => |equal| try std.testing.expectEqual(150, equal.int()),
+        else => @compileError(
+            "It doesn't even matter what you put as an argument, it's always going to be 150.",
+        ),
+    }
+
+    var only_equid = Bint(10, 20).furthest(Bint(15, 15).widen(15));
+    _ = &only_equid;
+    switch (only_equid) {
+        .equid => {},
+        else => @compileError("The argument is always right in the middle."),
+    }
+
+    var lower_or_equid = Bint(10, 20).furthest(Bint(15, 1000).widen(15));
+    _ = &lower_or_equid;
+    switch (lower_or_equid) {
+        .equid, .lower => {},
+        else => @compileError("The argument is always bigger or equal to the middle."),
+    }
+
+    var upper_or_equid = Bint(10, 20).furthest(Bint(-100, 15).widen(15));
+    _ = &upper_or_equid;
+    switch (upper_or_equid) {
+        .upper, .equid => {},
+        else => @compileError("The argument is always smaller orequal to the middle."),
+    }
+
+    var lower_or_upper = Bint(10, 19).furthest(@as(i8, 0));
+    _ = &lower_or_upper;
+    switch (lower_or_upper) {
+        .lower, .upper => {},
+        else => @compileError("The argument can be anywhere, but there's no middle."),
+    }
+
+    var lower_or_upper_or_equid = Bint(10, 20).furthest(Bint(14, 16).widen(15));
+    _ = &lower_or_upper_or_equid;
+    switch (lower_or_upper_or_equid) {
+        .equal => @compileError(
+            "The argument can be anywhere, the lower and upper bounds aren't equal, though.",
+        ),
+        else => {},
+    }
+}
