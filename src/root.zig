@@ -253,28 +253,18 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             };
         }
 
-        pub fn DivFloorPayload(comptime T: type) type {
+        const Rounding = Range.Rounding;
+
+        pub fn DivPayload(comptime r: Rounding, comptime T: type) type {
             const Other = From(T);
-            return FromRange(switch (range.div(Other.range, .floor)) {
+            return FromRange(switch (range.div(r, Other.range)) {
                 .must_fail => return noreturn,
                 .must_pass, .can_both => |div_range| div_range,
             });
         }
 
-        pub fn DivFloor(comptime T: type) type {
-            return DivError(T)!DivFloorPayload(T);
-        }
-
-        pub fn DivTruncPayload(comptime T: type) type {
-            const Other = From(T);
-            return FromRange(switch (range.div(Other.range, .trunc)) {
-                .must_fail => return noreturn,
-                .must_pass, .can_both => |div_range| div_range,
-            });
-        }
-
-        pub fn DivTrunc(comptime T: type) type {
-            return DivError(T)!DivTruncPayload(T);
+        pub fn Div(comptime r: Rounding, comptime T: type) type {
+            return DivError(T)!DivPayload(r, T);
         }
 
         pub fn init(anyint: anytype) Init(@TypeOf(anyint)) {
@@ -360,86 +350,52 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             return @enumFromInt(self_wide.int() * other_wide.int());
         }
 
-        pub fn divFloor(s: Self, other: anytype) DivFloor(@TypeOf(other)) {
+        pub fn div(s: Self, comptime r: Rounding, other: anytype) Div(r, @TypeOf(other)) {
             const Other = From(@TypeOf(other));
-            const Wide = Self.Union(Other).Union(Self.DivFloor(Other));
 
-            if (comptime Self.unique_int) |unique_self| {
-                if (comptime Other.unique_int) |unique_other| {
-                    if (unique_other == 0)
-                        return DivisionError.DivisionByZero;
-                    return @enumFromInt(@divFloor(unique_self, unique_other));
-                }
-            }
+            const Payload = Self.DivPayload(r, Other);
 
-            const other_wide: Wide = .init(other) catch comptime unreachable;
-            const self_wide: Wide = .init(s) catch comptime unreachable;
-
-            if (comptime Self.unique_int) |unique_self| {
-                if (other_wide.ord(0) == .eq)
-                    return DivisionError.DivisionByZero;
-
-                return @divFloor(unique_self, other_wide.int());
-            }
-
-            if (comptime Other.unique_int) |unique_other| {
-                if (unique_other == 0)
-                    return DivisionError.DivisionByZero;
-
-                return @divFloor(self_wide.int(), unique_other);
-            }
-
-            if (other_wide.ord(0) == .eq)
+            if (Payload == noreturn)
                 return DivisionError.DivisionByZero;
 
-            return @enumFromInt(@divFloor(
-                self_wide.int(),
-                other_wide.int(),
-            ));
-        }
-
-        pub fn divTrunc(s: Self, other: anytype) DivFloor(@TypeOf(other)) {
-            const Other = From(@TypeOf(other));
-            const Wide = Self.Union(Other).Union(Self.DivTrunc(Other));
-
-            if (comptime Self.unique_int) |unique_self| {
-                if (comptime Other.unique_int) |unique_other| {
-                    if (unique_other == 0)
-                        return DivisionError.DivisionByZero;
-                    return @enumFromInt(@divTrunc(
-                        unique_self,
-                        unique_other,
-                    ));
+            const Wide = Self.Union(Other).Union(Payload);
+            const divFn = struct {
+                fn divFn(numerator: anytype, denominator: @TypeOf(numerator)) @TypeOf(numerator) {
+                    return switch (r) {
+                        .floor => @divFloor(numerator, denominator),
+                        .trunc => @divTrunc(numerator, denominator),
+                    };
                 }
-            }
+            }.divFn;
 
-            const other_wide: Wide = .init(other) catch comptime unreachable;
-            const self_wide: Wide = .init(s) catch comptime unreachable;
+            if (comptime Self.unique_int) |unique_self|
+                if (comptime Other.unique_int) |unique_other|
+                    return @enumFromInt(divFn(unique_self, unique_other));
+
+            const other_wide: Wide = .widen(other);
+            const self_wide: Wide = .widen(s);
 
             if (comptime Self.unique_int) |unique_self| {
                 if (other_wide.ord(0) == .eq)
                     return DivisionError.DivisionByZero;
 
-                return @enumFromInt(@divTrunc(
-                    unique_self,
-                    other_wide.int(),
-                ));
+                return divFn(unique_self, other_wide.int());
             }
 
             if (comptime Other.unique_int) |unique_other| {
                 if (unique_other == 0)
                     return DivisionError.DivisionByZero;
 
-                return @enumFromInt(@divTrunc(
+                return @enumFromInt(divFn(
                     self_wide.int(),
                     unique_other,
                 ));
             }
 
-            if (other_wide.ord(0) == .eq)
+            if (comptime Other.range.hasInt(0)) if (other_wide.ord(0) == .eq)
                 return DivisionError.DivisionByZero;
 
-            return @enumFromInt(@divTrunc(
+            return @enumFromInt(divFn(
                 self_wide.int(),
                 other_wide.int(),
             ));

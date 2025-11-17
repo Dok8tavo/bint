@@ -260,18 +260,18 @@ pub fn div(r1: Range, r: Rounding, r2: Range) MayFail {
     ) else null;
 
     const pos_by_neg: ?Range = if (pos_numerator != null and neg_denominator != null) from(
-        divInt(r, pos_numerator.?.upper, neg_denominator.?.lower),
-        divInt(r, pos_numerator.?.lower, neg_denominator.?.upper),
+        divInt(r, pos_numerator.?.upper, neg_denominator.?.upper),
+        divInt(r, pos_numerator.?.lower, neg_denominator.?.lower),
     ) else null;
 
     const neg_by_pos: ?Range = if (neg_numerator != null and pos_denominator != null) from(
-        divInt(r, neg_numerator.?.upper, pos_denominator.?.lower),
-        divInt(r, neg_numerator.?.lower, pos_denominator.?.upper),
+        divInt(r, neg_numerator.?.lower, pos_denominator.?.lower),
+        divInt(r, neg_numerator.?.upper, pos_denominator.?.upper),
     ) else null;
 
     const neg_by_neg: ?Range = if (neg_numerator != null and neg_denominator != null) from(
-        divInt(r, neg_numerator.?.lower, neg_denominator.?.upper),
         divInt(r, neg_numerator.?.upper, neg_denominator.?.lower),
+        divInt(r, neg_numerator.?.lower, neg_denominator.?.upper),
     ) else null;
 
     var result: Range = if (pos_by_pos) |tmp|

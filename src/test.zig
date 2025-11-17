@@ -602,6 +602,95 @@ test "ceil - comptime smartness" {
         try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
 }
 
+test "div" {
+    // The `div` function attempts a floored integer division. It fails when dividing by
+    // zero. When the result of the division isn't exact and is negative, it rounds towards
+    // negative infinity with the `.floor` option, and towards 0 with the `.trunc` option.
+
+    const eight = Bint(0, 100).widen(8);
+    const four = try eight.div(.floor, @as(u8, 2));
+    try std.testing.expectEqual(4, four.int());
+
+    // This is the integer division, so `7 ÷ 2 = 3`
+    const negseven = Bint(-16, 16).widen(-7);
+    const three = try negseven.div(.floor, @as(i8, -2));
+    try std.testing.expectEqual(3, three.int());
+
+    // Dividing by 0 is punishable by death.
+    const ten = Bint(8, 12).widen(10);
+    try std.testing.expectError(
+        error.DivisionByZero,
+        ten.div(.floor, @as(u8, 0)),
+    );
+
+    // The division is floored, so `(-7) ÷ 2 = 7 ÷ (-2) = -4`
+    const negfour = try negseven.div(.floor, @as(isize, 2));
+    try std.testing.expectEqual(-4, negfour.int());
+
+    // The division is truncated, so `(-7) ÷ 2 = 7 ÷ (-2) = -3`
+    const negthree = try negseven.div(.trunc, @as(u8, 2));
+    try std.testing.expectEqual(-3, negthree.int());
+}
+
+test "div - narrowing" {
+    // Integer division always results in a smaller or equally big number (in absolute value).
+    // It results in `div` being narrowing when the divider can't be `1` or `-1`.
+
+    const Byte = Bint(0, 255);
+    const NotOne = Bint(2, 255);
+
+    const eight = Byte.widen(8);
+    const two = NotOne.widen(2);
+
+    const four = try eight.div(.floor, two);
+    const Four = @TypeOf(four);
+
+    try std.testing.expectEqual(u8, Byte.Backing);
+    try std.testing.expectEqual(u8, NotOne.Backing);
+    try std.testing.expectEqual(Bint(0, 127), Four);
+    try std.testing.expectEqual(u7, Four.Backing);
+}
+
+test "div - widening" {
+    // When divided by -1, a power of 2 requires more bits for its representation.
+    const SignedByte = Bint(-128, 127);
+    const sbyte = SignedByte.widen(-16);
+    const reverse_sbyte = sbyte.div(.floor, bint.fromComptime(-1)) catch unreachable;
+
+    const ReversedSignedByte = @TypeOf(reverse_sbyte);
+    try std.testing.expectEqual(16, reverse_sbyte.int());
+    try std.testing.expectEqual(i8, SignedByte.Backing);
+    try std.testing.expectEqual(Bint(-127, 128), ReversedSignedByte);
+    try std.testing.expectEqual(i9, ReversedSignedByte.Backing);
+}
+
+test "div - comptime smartness" {
+    // The `div` function is "comptime smart": if it can tell from the types of its arguments that
+    // it can't fail (or can't pass), it'll make the failing (or passing) path dead code.
+
+    const Numerator = Bint(-128, 127);
+    const NotZero = Bint(1, 100);
+
+    var numerator = Numerator.widen(100);
+    _ = &numerator; // making sure it works with runtime values too.
+    var denominator = NotZero.widen(25);
+    _ = &denominator;
+
+    const fraction = numerator.div(.trunc, denominator) catch
+        // This will never trigger an error, because the type system knows there's no error for
+        // `divFloor` to return here.
+        @compileError("This division must be guarded against `error.DivisionByZero`!");
+
+    try std.testing.expectEqual(4, fraction.int());
+
+    // It works too if you divide by a bint that can't be anything but 0.
+    const failure = fraction.div(.floor, bint.fromComptime(0));
+    if (failure) |_|
+        @compileError("The division, must be guaranteed to fail (wtf am I on?).")
+    else |err|
+        try std.testing.expectEqual(error.DivisionByZero, err);
+}
+
 test "closest" {
     // This function returns the closest bint within bounds to a given bint or regular integer.
 
@@ -821,21 +910,26 @@ test "furthest - comptime smartness" {
     _ = &upper_or_equid;
     switch (upper_or_equid) {
         .upper, .equid => {},
-        else => @compileError("The argument is always smaller orequal to the middle."),
+        else => @compileError(
+            "The argument is always smaller or equal to the middle.",
+        ),
     }
 
     var lower_or_upper = Bint(10, 19).furthest(@as(i8, 0));
     _ = &lower_or_upper;
     switch (lower_or_upper) {
         .lower, .upper => {},
-        else => @compileError("The argument can be anywhere, but there's no middle."),
+        else => @compileError(
+            "The furthest from the argument can be anywhere, but there's no middle.",
+        ),
     }
 
     var lower_or_upper_or_equid = Bint(10, 20).furthest(Bint(14, 16).widen(15));
     _ = &lower_or_upper_or_equid;
     switch (lower_or_upper_or_equid) {
         .equal => @compileError(
-            "The argument can be anywhere, the lower and upper bounds aren't equal, though.",
+            \\The furthest from the argument could be anywhere.
+            \\The lower and upper bounds aren't equal, though.
         ),
         else => {},
     }
