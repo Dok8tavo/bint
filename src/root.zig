@@ -218,24 +218,29 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
 
                 pub fn int(f: Furthest(T)) ?Backing {
                     return switch (f) {
-                        .upper => max_int,
                         .lower => min_int,
                         .equal => unique_int.?,
+                        .upper => max_int,
                         .equid => null,
                     };
                 }
 
                 pub fn bint(f: Furthest(T)) ?Self {
                     return switch (f) {
-                        .upper => max_bint,
                         .lower => min_bint,
                         .equal => mid_bint,
+                        .upper => max_bint,
                         .equid => null,
                     };
                 }
 
-                pub fn has(comptime field: std.meta.FieldEnum(@This())) bool {
-                    return @FieldType(@This(), @tagName(field)) != noreturn;
+                pub fn has(comptime field: std.meta.FieldEnum(Furthest(T))) bool {
+                    return rf.has(switch (field) {
+                        .lower => .lower,
+                        .equal => .equal,
+                        .upper => .upper,
+                        .equid => .equid,
+                    });
                 }
             };
         }
@@ -265,6 +270,30 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
 
         pub fn Div(comptime r: Rounding, comptime T: type) type {
             return DivError(T)!DivPayload(r, T);
+        }
+
+        pub fn Ord(comptime T: type) type {
+            const Other = From(T);
+
+            return union(enum) {
+                less: Less,
+                same: Same,
+                more: More,
+
+                const o = range.ord(Other.range);
+
+                const Less = if (o.has(.less)) void else noreturn;
+                const Same = if (o.has(.same)) void else noreturn;
+                const More = if (o.has(.more)) void else noreturn;
+
+                pub fn has(field: std.meta.FieldEnum(Ord(T))) bool {
+                    return o.has(switch (field) {
+                        .less => .less,
+                        .same => .same,
+                        .more => .more,
+                    });
+                }
+            };
         }
 
         pub fn init(anyint: anytype) Init(@TypeOf(anyint)) {
@@ -376,7 +405,7 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             const self_wide: Wide = .widen(s);
 
             if (comptime Self.unique_int) |unique_self| {
-                if (other_wide.ord(0) == .eq)
+                if (other_wide.int() == 0)
                     return DivisionError.DivisionByZero;
 
                 return divFn(unique_self, other_wide.int());
@@ -392,7 +421,7 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
                 ));
             }
 
-            if (comptime Other.range.hasInt(0)) if (other_wide.ord(0) == .eq)
+            if (comptime Other.range.hasInt(0)) if (other_wide.int() == 0)
                 return DivisionError.DivisionByZero;
 
             return @enumFromInt(divFn(
@@ -405,20 +434,20 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             const o = from(other);
             const Other = From(@TypeOf(other));
             return switch (s.ord(other)) {
-                .lt => if (comptime Self.unique_int) |uv|
+                .less => if (comptime Self.unique_int) |uv|
                     @enumFromInt(uv)
                 else
                     @enumFromInt(s.int()),
-                .gt => if (comptime Other.unique_int) |uv|
-                    @enumFromInt(uv)
-                else
-                    @enumFromInt(o.int()),
-                .eq => if (comptime Self.unique_int) |uv|
+                .same => if (comptime Self.unique_int) |uv|
                     @enumFromInt(uv)
                 else if (comptime Other.unique_int) |uv|
                     @enumFromInt(uv)
                 else
                     @enumFromInt(s.int()),
+                .more => if (comptime Other.unique_int) |uv|
+                    @enumFromInt(uv)
+                else
+                    @enumFromInt(o.int()),
             };
         }
 
@@ -426,15 +455,15 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             const o = from(other);
             const Other = From(@TypeOf(other));
             return switch (s.ord(other)) {
-                .lt => if (comptime Other.unique_int) |uv|
+                .less => if (comptime Other.unique_int) |uv|
                     @enumFromInt(uv)
                 else
                     @enumFromInt(o.int()),
-                .gt => if (comptime Self.unique_int) |uv|
+                .same => if (comptime Self.unique_int) |uv|
                     @enumFromInt(uv)
                 else
                     @enumFromInt(s.int()),
-                .eq => if (comptime Other.unique_int) |uv|
+                .more => if (comptime Other.unique_int) |uv|
                     @enumFromInt(uv)
                 else if (comptime Self.unique_int) |uv|
                     @enumFromInt(uv)
@@ -547,39 +576,56 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
                     .upper = .widen(max_int),
                 },
                 .lower_or_upper_or_equid => switch (i.ord(mid_bint)) {
-                    .gt => .{ .lower = .widen(min_int) },
-                    .eq => .equid,
-                    .lt => .{ .upper = .widen(max_int) },
+                    .less => .{ .upper = .widen(max_int) },
+                    .same => .equid,
+                    .more => .{ .lower = .widen(min_int) },
                 },
             };
         }
 
-        pub fn ord(s: Self, other: anytype) std.math.Order {
-            const o = switch (@TypeOf(other)) {
-                comptime_int => fromComptime(other),
-                else => from(other),
-            };
-
+        pub fn ord(s: Self, other: anytype) Ord(@TypeOf(other)) {
+            const o = from(other);
             const Other = @TypeOf(o);
+            const Result = Ord(Other);
+            return switch (Result.o) {
+                .less => .less,
+                .same => .same,
+                .more => .more,
 
-            if (comptime Other.max_int < Self.min_int)
-                return .gt;
+                .less_or_same => if (comptime Self.unique_int) |unique_self| {
+                    if (unique_self == o.int())
+                        return .same;
+                    return .less;
+                } else if (comptime Other.unique_int) |unique_other| {
+                    if (unique_other == s.int())
+                        return .same;
+                    return .less;
+                } else if (s.int() == o.int())
+                    .same
+                else
+                    .less,
 
-            if (comptime Self.max_int < Other.min_int)
-                return .lt;
+                .same_or_more => if (comptime Self.unique_int) |unique_self| {
+                    if (unique_self == o.int())
+                        return .same;
+                    return .more;
+                } else if (comptime Other.unique_int) |unique_other| {
+                    if (unique_other == s.int())
+                        return .same;
+                    return .more;
+                } else if (s.int() == o.int())
+                    .same
+                else
+                    .more,
 
-            if (comptime Self.unique_int) |unique_self|
-                if (comptime Other.unique_int) |unique_other|
-                    return comptime std.math.order(unique_self, unique_other);
+                .any => switch (std.math.order(s.int(), o.int())) {
+                    .lt => .less,
+                    .eq => .same,
+                    .gt => .more,
+                },
 
-            // TODO: use `@branchHint` for runtime operations
-            if (comptime Self.unique_int) |unique_self|
-                return std.math.order(unique_self, o.int());
-
-            if (comptime Other.unique_int) |unique_other|
-                return std.math.order(s.int(), unique_other);
-
-            return std.math.order(s.int(), o.int());
+                else => comptime unreachable,
+            };
         }
 
         pub fn expect(s: Self) BoundsError!void {

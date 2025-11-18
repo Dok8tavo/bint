@@ -318,6 +318,150 @@ pub fn numerator(r: Range, pos: bool) ?Range {
     };
 }
 
+pub const Order = enum(u3) {
+    less = 0b001,
+    same = 0b010,
+    more = 0b100,
+
+    less_or_same = 0b011,
+    same_or_more = 0b110,
+
+    any = 0b111,
+    _,
+
+    pub fn has(o1: Order, o2: Order) bool {
+        return ~o1.int() & o2.int() == 0;
+    }
+
+    pub fn add(o1: Order, o2: Order) Order {
+        return @enumFromInt(o1.int() | o2.int());
+    }
+
+    pub fn int(o: Order) u3 {
+        return @intFromEnum(o);
+    }
+};
+
+pub fn ord(r1: Range, r2: Range) Order {
+    //  r1 r2
+    // -||-||-
+    if (r1.unique()) |unique_1| if (r2.unique()) |unique_2| if (unique_1 == unique_2)
+        return .same;
+
+    //   r1   r2
+    // ->--<->--<-
+    // --||-->--<-
+    // ->--<--||--
+    // --||---||--
+    if (r1.upper < r2.lower)
+        return .less;
+
+    //   r2   r1
+    // ->--<->--<-
+    // --||-->--<-
+    // ->--<--||--
+    // --||---||--
+    if (r2.upper < r1.lower)
+        return .more;
+
+    if (r1.unique()) |unique_1| {
+        //  r1 r2
+        // ->|---<-
+        if (unique_1 == r2.lower)
+            return .less_or_same;
+        //   r2 r1 r2
+        // ->---||---<-
+        if (unique_1 < r2.upper)
+            return .any;
+        //   r2 r1
+        // ->---|<-
+        return .same_or_more;
+    }
+
+    if (r2.unique()) |unique_2| {
+        //  r2 r1
+        // ->|---<-
+        if (unique_2 == r1.lower)
+            return .same_or_more;
+        //   r1 r2 r1
+        // ->---||---<-
+        if (unique_2 < r1.upper)
+            return .any;
+        //   r1 r2
+        // ->---|<-
+        return .less_or_same;
+    }
+
+    //   r1 r2
+    // ->--|--<-
+    if (r1.upper == r2.lower)
+        return .less_or_same;
+
+    //   r2 r1
+    // ->--|--<-
+    if (r2.upper == r1.lower)
+        return .same_or_more;
+
+    //   r1 r1/r2 r2
+    // ->-->-----<--<-
+    //   r1 r1/r2 r2
+    // ->-->-----<--<-
+    //   r2 r1/r2 r2
+    // ->-->-----<--<-
+    //   r2 r1/r2 r1
+    // ->-->-----<--<-
+    return .any;
+}
+
+test ord {
+    // ->--<->--<-
+    try std.testing.expectEqual(.less, from(0, 1).ord(from(2, 3)));
+    // -||->--<-
+    try std.testing.expectEqual(.less, from(0, 0).ord(from(1, 2)));
+    // ->-|-<-
+    try std.testing.expectEqual(.less_or_same, from(0, 1).ord(from(1, 2)));
+    // ->|-<
+    try std.testing.expectEqual(.less_or_same, from(0, 0).ord(from(0, 1)));
+    // ->->-<-<
+    try std.testing.expectEqual(.any, from(0, 2).ord(from(1, 3)));
+    // ->|-<-<
+    try std.testing.expectEqual(.any, from(0, 1).ord(from(0, 2)));
+    // ->-||-<-
+    try std.testing.expectEqual(.any, from(1, 1).ord(from(0, 2)));
+    // ->->-|<-
+    try std.testing.expectEqual(.any, from(1, 2).ord(from(0, 2)));
+    // ->-|<-
+    try std.testing.expectEqual(.same_or_more, from(1, 1).ord(from(0, 1)));
+    // ->->-<-<-
+    try std.testing.expectEqual(.any, from(0, 3).ord(from(1, 2)));
+    // ->|-<-<-
+    try std.testing.expectEqual(.any, from(0, 2).ord(from(0, 1)));
+    // ->->-<-<-
+    try std.testing.expectEqual(.any, from(1, 3).ord(from(0, 2)));
+    // ->-|<-<-
+    try std.testing.expectEqual(.same_or_more, from(1, 2).ord(from(0, 1)));
+    // ->-<->-<-
+    try std.testing.expectEqual(.more, from(2, 3).ord(from(0, 1)));
+    // ->-<-||-
+    try std.testing.expectEqual(.more, from(2, 2).ord(from(0, 1)));
+    // ->-<-||-
+    try std.testing.expectEqual(.less, from(0, 1).ord(from(2, 2)));
+    // -||-||-
+    try std.testing.expectEqual(.less, from(0, 0).ord(from(1, 1)));
+    // ->-|<-
+    try std.testing.expectEqual(.less_or_same, from(0, 1).ord(from(1, 1)));
+    // -||-
+    try std.testing.expectEqual(.same, from(0, 0).ord(from(0, 0)));
+    // ->-||-<-
+    try std.testing.expectEqual(.any, from(0, 2).ord(from(1, 1)));
+    // ->|-<-
+    try std.testing.expectEqual(.same_or_more, from(0, 1).ord(from(0, 0)));
+    // -||->-<-
+    try std.testing.expectEqual(.more, from(1, 2).ord(from(0, 0)));
+    // -||-||-
+    try std.testing.expectEqual(.more, from(1, 1).ord(from(0, 0)));
+}
+
 inline fn compileError(comptime fmt: []const u8, comptime args: anytype) noreturn {
     @compileError(std.fmt.comptimePrint(fmt, args));
 }

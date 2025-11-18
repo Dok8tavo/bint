@@ -935,6 +935,75 @@ test "furthest - comptime smartness" {
     }
 }
 
+test "ord" {
+    // The `ord` function returns the order which of two bints (or a bint and a regular integer) is bigger.
+    const smol = Bint(0, 12).widen(1);
+    const big = Bint(-10, 4).widen(3);
+
+    // `smol` is less than `big`
+    try std.testing.expectEqual(.less, smol.ord(big));
+    // `big` is more than `smol`
+    try std.testing.expectEqual(.more, big.ord(smol));
+    // `smol` is the same as `smol`
+    try std.testing.expectEqual(.same, smol.ord(smol));
+}
+
+test "ord - comptime smartness" {
+    // The `ord` function is "comptime-smart", which means that a result that's proved impossible
+    // by the type system will be a `noreturn`. And the unreachable branches that results from it
+    // won't even be analyzed.
+
+    var negative = Bint(-16, -1).widen(-2);
+    var positive = Bint(1, 15).widen(4);
+    _ = &negative;
+    _ = &positive;
+
+    const always_more = positive.ord(negative);
+
+    if (always_more == .less)
+        // This won't be evaluated by Zig, because the type of the `.less` variant is `noreturn`.
+        @compileError("The order `always_more` must be proved not to be `.less`!");
+
+    if (always_more == .same)
+        @compileError("The order `always_more` can't be `.same` either!");
+
+    try std.testing.expectEqual(.more, always_more);
+
+    const always_less = negative.ord(positive);
+    switch (always_less) {
+        .less => try std.testing.expect(!@inComptime()),
+        .more, .same => @compileError("The order `always` must be proved to be `.less`!"),
+    }
+
+    var both = Bint(-1, 1).widen(0);
+    _ = &both;
+
+    const less_or_same = both.ord(positive);
+    switch (less_or_same) {
+        // Those are both possible
+        .less, .same => {},
+        .more => @compileError("This one's impossible!"),
+    }
+
+    const same_or_more = both.ord(negative);
+    switch (same_or_more) {
+        // Those are both possible
+        .same, .more => {},
+        .less => @compileError("This one's impossible!"),
+    }
+
+    // There's one case when both must be the same:
+    var sixty_nine = bint.fromComptime(69);
+    _ = &sixty_nine;
+
+    const always_same = sixty_nine.ord(sixty_nine);
+
+    switch (always_same) {
+        .same => try std.testing.expect(!@inComptime()),
+        else => @compileError("The order `always_same` must be proved to be always `.same`!"),
+    }
+}
+
 test "expect" {
     // This function could be useful if you get a bint from somewhere and not sure if it is valid.
     // This can happen in two scenarios:
