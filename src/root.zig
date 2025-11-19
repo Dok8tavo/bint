@@ -268,8 +268,20 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             });
         }
 
+        pub fn RemPayload(comptime r: Rounding, comptime T: type) type {
+            const Other = From(T);
+            return FromRange(switch (range.rem(r, Other.range)) {
+                .must_fail => return noreturn,
+                .must_pass, .can_both => |rem_range| rem_range,
+            });
+        }
+
         pub fn Div(comptime r: Rounding, comptime T: type) type {
             return DivError(T)!DivPayload(r, T);
+        }
+
+        pub fn Rem(comptime r: Rounding, comptime T: type) type {
+            return DivError(T)!RemPayload(r, T);
         }
 
         pub fn Ord(comptime T: type) type {
@@ -381,18 +393,18 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
 
         pub fn div(s: Self, comptime r: Rounding, other: anytype) Div(r, @TypeOf(other)) {
             const Other = From(@TypeOf(other));
-
             const Payload = Self.DivPayload(r, Other);
 
             if (Payload == noreturn)
                 return DivisionError.DivisionByZero;
 
             const Wide = Self.Union(Other).Union(Payload);
+
             const divFn = struct {
-                fn divFn(numerator: anytype, denominator: @TypeOf(numerator)) @TypeOf(numerator) {
+                fn divFn(a: Wide.Backing, b: Wide.Backing) Wide.Backing {
                     return switch (r) {
-                        .floor => @divFloor(numerator, denominator),
-                        .trunc => @divTrunc(numerator, denominator),
+                        .floor => @divFloor(a, b),
+                        .trunc => @divTrunc(a, b),
                     };
                 }
             }.divFn;
@@ -404,30 +416,53 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             const other_wide: Wide = .widen(other);
             const self_wide: Wide = .widen(s);
 
-            if (comptime Self.unique_int) |unique_self| {
-                if (other_wide.int() == 0)
-                    return DivisionError.DivisionByZero;
+            if (comptime Other.unique_int) |unique_other|
+                return @enumFromInt(divFn(self_wide.int(), unique_other));
 
-                return divFn(unique_self, other_wide.int());
-            }
-
-            if (comptime Other.unique_int) |unique_other| {
-                if (unique_other == 0)
-                    return DivisionError.DivisionByZero;
-
-                return @enumFromInt(divFn(
-                    self_wide.int(),
-                    unique_other,
-                ));
-            }
-
-            if (comptime Other.range.hasInt(0)) if (other_wide.int() == 0)
+            if (Other.widen(other).ord(fromComptime(0)) == .same)
                 return DivisionError.DivisionByZero;
 
-            return @enumFromInt(divFn(
-                self_wide.int(),
-                other_wide.int(),
-            ));
+            if (comptime Self.unique_int) |unique_self|
+                return @enumFromInt(divFn(unique_self, other_wide.int()));
+
+            return @enumFromInt(divFn(self_wide.int(), other_wide.int()));
+        }
+
+        pub fn rem(s: Self, comptime r: Rounding, other: anytype) Rem(r, @TypeOf(other)) {
+            const Other = From(@TypeOf(other));
+            const Payload = RemPayload(r, Other);
+
+            if (Payload == noreturn)
+                return DivisionError.DivisionByZero;
+
+            const Wide = Self.Union(Other).Union(Payload);
+
+            const remFn = struct {
+                fn remFn(a: Wide.Backing, b: Wide.Backing) Wide.Backing {
+                    return switch (r) {
+                        .floor => @mod(a, b),
+                        .trunc => @rem(a, b),
+                    };
+                }
+            }.remFn;
+
+            if (comptime Self.unique_int) |unique_self|
+                if (comptime Other.unique_int) |unique_other|
+                    return comptime @enumFromInt(remFn(unique_self, unique_other));
+
+            const wide_other: Wide = .widen(other);
+            const wide_self: Wide = .widen(s);
+
+            if (comptime Other.unique_int) |unique_other|
+                return @enumFromInt(remFn(wide_self, unique_other));
+
+            if (Other.widen(other).ord(fromComptime(0)) == .same)
+                return DivisionError.DivisionByZero;
+
+            if (comptime Self.unique_int) |unique_self|
+                return @enumFromInt(remFn(unique_self, wide_other));
+
+            return @enumFromInt(remFn(wide_self.int(), wide_other.int()));
         }
 
         pub fn min(s: Self, other: anytype) Min(@TypeOf(other)) {

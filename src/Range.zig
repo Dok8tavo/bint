@@ -242,6 +242,20 @@ pub fn @"union"(r1: Range, r2: Range) Range {
 pub const Rounding = enum {
     trunc,
     floor,
+
+    pub fn div(r: Rounding, a: comptime_int, b: comptime_int) comptime_int {
+        return switch (r) {
+            .floor => @divFloor(a, b),
+            .trunc => @divTrunc(a, b),
+        };
+    }
+
+    pub fn rem(r: Rounding, a: comptime_int, b: comptime_int) comptime_int {
+        return switch (r) {
+            .floor => @mod(a, b),
+            .trunc => @rem(a, b),
+        };
+    }
 };
 
 pub fn div(r1: Range, r: Rounding, r2: Range) MayFail {
@@ -255,23 +269,23 @@ pub fn div(r1: Range, r: Rounding, r2: Range) MayFail {
     const neg_denominator = r2.denominator(false);
 
     const pos_by_pos: ?Range = if (pos_numerator != null and pos_denominator != null) from(
-        divInt(r, pos_numerator.?.lower, pos_denominator.?.upper),
-        divInt(r, pos_numerator.?.upper, pos_denominator.?.lower),
+        r.div(pos_numerator.?.lower, pos_denominator.?.upper),
+        r.div(pos_numerator.?.upper, pos_denominator.?.lower),
     ) else null;
 
     const pos_by_neg: ?Range = if (pos_numerator != null and neg_denominator != null) from(
-        divInt(r, pos_numerator.?.upper, neg_denominator.?.upper),
-        divInt(r, pos_numerator.?.lower, neg_denominator.?.lower),
+        r.div(pos_numerator.?.upper, neg_denominator.?.upper),
+        r.div(pos_numerator.?.lower, neg_denominator.?.lower),
     ) else null;
 
     const neg_by_pos: ?Range = if (neg_numerator != null and pos_denominator != null) from(
-        divInt(r, neg_numerator.?.lower, pos_denominator.?.lower),
-        divInt(r, neg_numerator.?.upper, pos_denominator.?.upper),
+        r.div(neg_numerator.?.lower, pos_denominator.?.lower),
+        r.div(neg_numerator.?.upper, pos_denominator.?.upper),
     ) else null;
 
     const neg_by_neg: ?Range = if (neg_numerator != null and neg_denominator != null) from(
-        divInt(r, neg_numerator.?.upper, neg_denominator.?.lower),
-        divInt(r, neg_numerator.?.lower, neg_denominator.?.upper),
+        r.div(neg_numerator.?.upper, neg_denominator.?.lower),
+        r.div(neg_numerator.?.lower, neg_denominator.?.upper),
     ) else null;
 
     var result: Range = if (pos_by_pos) |tmp|
@@ -295,13 +309,6 @@ pub fn div(r1: Range, r: Rounding, r2: Range) MayFail {
     };
 }
 
-pub fn divInt(r: Rounding, a: comptime_int, b: comptime_int) comptime_int {
-    return switch (r) {
-        .floor => @divFloor(a, b),
-        .trunc => @divTrunc(a, b),
-    };
-}
-
 pub fn denominator(r: Range, pos: bool) ?Range {
     const rden = if (pos) r.floor(splat(1)) else r.ceil(splat(-1));
     return switch (rden) {
@@ -315,6 +322,17 @@ pub fn numerator(r: Range, pos: bool) ?Range {
     return switch (rden) {
         .must_fail => null,
         .can_both, .must_pass => |pass| pass,
+    };
+}
+
+pub fn rem(r1: Range, r: Rounding, r2: Range) MayFail {
+    return switch (r1.div(r, r2)) {
+        .must_fail => .must_fail,
+        inline .can_both, .must_pass => |payload, tag| @unionInit(
+            MayFail,
+            @tagName(tag),
+            r1.sub(payload.mul(r2)),
+        ),
     };
 }
 

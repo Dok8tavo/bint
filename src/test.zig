@@ -603,8 +603,8 @@ test "ceil - comptime smartness" {
 }
 
 test "div" {
-    // The `div` function attempts a floored integer division. It fails when dividing by
-    // zero. When the result of the division isn't exact and is negative, it rounds towards
+    // The `div` function attempts a floored or truncated integer division. It fails when dividing
+    // by zero. When the result of the division isn't exact and is negative, it rounds towards
     // negative infinity with the `.floor` option, and towards 0 with the `.trunc` option.
 
     const eight = Bint(0, 100).widen(8);
@@ -689,6 +689,52 @@ test "div - comptime smartness" {
         @compileError("The division, must be guaranteed to fail (wtf am I on?).")
     else |err|
         try std.testing.expectEqual(error.DivisionByZero, err);
+}
+
+test "rem" {
+    // The `rem` function attempts to retrieve the remainder of the floored or truncated integer
+    // division. It fails when given 0 as the denominator.
+
+    const eight = Bint(5, 12).widen(8);
+    const four = Bint(-2, 7).widen(4);
+
+    // Since 4 divides 8, the remainder is zero.
+    const zero = try eight.rem(.floor, four);
+    try std.testing.expectEqual(0, zero.int());
+
+    const negfive = four.sub(bint.fromComptime(9));
+
+    const negtwo = try eight.rem(.floor, negfive);
+    try std.testing.expectEqual(-2, negtwo.int());
+    try std.testing.expectEqual(
+        eight.int(),
+        (try eight.div(.floor, negfive))
+            .mul(negfive)
+            .add(try eight.rem(.floor, negfive))
+            .int(),
+    );
+
+    const three = try eight.rem(.trunc, negfive);
+    try std.testing.expectEqual(3, three.int());
+    try std.testing.expectEqual(
+        eight.int(),
+        (try eight.div(.trunc, negfive))
+            .mul(negfive)
+            .add(try eight.rem(.trunc, negfive))
+            .int(),
+    );
+}
+
+test "rem - narrowing" {
+    // TODO
+}
+
+test "rem - widening" {
+    // TODO
+}
+
+test "rem - comptime smartness" {
+    // TODO
 }
 
 test "closest" {
