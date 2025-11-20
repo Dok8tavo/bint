@@ -1081,3 +1081,11 @@ test "expect" {
     not_nine = @enumFromInt(7);
     try not_nine.expect();
 }
+
+test "Iterator" {
+    // The `Iterator` type is there to make it easier to go through the entire range in a loop.
+    const MyBint = Bint(-1, 13);
+    var iterator = MyBint.Iterator.init;
+    while (iterator.next()) |my_bint|
+        try std.testing.expectEqual(MyBint, @TypeOf(my_bint));
+}

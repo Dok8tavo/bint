@@ -308,6 +308,19 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             };
         }
 
+        pub const Iterator = struct {
+            peek: ?Self,
+
+            pub const init = Iterator{ .peek = min_bint };
+
+            pub fn next(it: *Iterator) ?Self {
+                return if (it.peek) |curr| {
+                    defer it.peek = if (curr.int() == max_int) null else @enumFromInt(curr.int() + 1);
+                    return curr;
+                } else null;
+            }
+        };
+
         pub fn init(anyint: anytype) Init(@TypeOf(anyint)) {
             const other = from(anyint);
             const Other = @TypeOf(other);
