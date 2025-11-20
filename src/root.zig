@@ -460,7 +460,7 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
                 return DivisionError.DivisionByZero;
 
             if (comptime Self.unique_int) |unique_self|
-                return @enumFromInt(remFn(unique_self, wide_other));
+                return @enumFromInt(remFn(unique_self, wide_other.int()));
 
             return @enumFromInt(remFn(wide_self.int(), wide_other.int()));
         }

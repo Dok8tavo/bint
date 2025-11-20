@@ -325,14 +325,19 @@ pub fn numerator(r: Range, pos: bool) ?Range {
     };
 }
 
-pub fn rem(r1: Range, r: Rounding, r2: Range) MayFail {
-    return switch (r1.div(r, r2)) {
-        .must_fail => .must_fail,
-        inline .can_both, .must_pass => |payload, tag| @unionInit(
-            MayFail,
-            @tagName(tag),
-            r1.sub(payload.mul(r2)),
-        ),
+pub fn rem(_: Range, _: Rounding, r2: Range) MayFail {
+    // TODO: make a cheap narrower range
+    if (r2.unique()) |unique_2|
+        if (unique_2 == 0)
+            return .must_fail;
+
+    const abs_result = r2.abs().upper - 1;
+    const result = from(-abs_result, abs_result);
+
+    return if (r2.hasInt(0)) .{
+        .can_both = result,
+    } else .{
+        .must_pass = result,
     };
 }
 

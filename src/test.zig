@@ -725,16 +725,35 @@ test "rem" {
     );
 }
 
-test "rem - narrowing" {
-    // TODO
-}
+test "rem - resizing" {
+    // For now, the `rem` function return type is always within those bounds:
+    // `- |denominator|.upper <..< |denominator|.upper`. It may become narrower in some cases in
+    // the future.
+    const TenToTwelve = Bint(10, 12);
+    const NegsevenToFive = Bint(-7, 5);
 
-test "rem - widening" {
-    // TODO
+    try std.testing.expectEqual(Bint(-11, 11), NegsevenToFive.RemPayload(.floor, TenToTwelve));
+    try std.testing.expectEqual(Bint(-6, 6), TenToTwelve.RemPayload(.trunc, NegsevenToFive));
 }
 
 test "rem - comptime smartness" {
-    // TODO
+    // The `rem` function is "comptime smart", when it can tell by the types that it can't or must
+    // fail, it'll make the passing or failing path respectively a dead path.
+    const NotZero = Bint(1, 10);
+    const Zero = Bint(0, 0);
+
+    var must_pass = Zero.widen(0).rem(.trunc, NotZero.widen(8));
+    _ = &must_pass;
+
+    _ = must_pass catch @compileError(
+        "This can't happen, the denominator is never zero, you can tell by its type!",
+    );
+
+    var must_fail = NotZero.widen(1).rem(.floor, Zero.widen(0));
+    _ = &must_fail;
+    if (must_fail) |_| @compileError(
+        "This can't happen, the denominator is always zero, you can tell by its type!",
+    ) else |fail| try std.testing.expectEqual(error.DivisionByZero, fail);
 }
 
 test "closest" {
