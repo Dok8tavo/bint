@@ -276,18 +276,55 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             };
         }
 
-        pub const Iterator = struct {
-            peek: ?Self,
+        pub fn Iterator(
+            lower: enum { runtime, min },
+            upper: enum { runtime, max },
+        ) type {
+            const Lower = if (lower == .min) void else Self;
+            const Upper = if (upper == .max) void else Self;
+            return struct {
+                lower: Lower,
+                upper: Upper,
+                peek: ?Bint(min_int, max_int),
 
-            pub const init = Iterator{ .peek = min_bint };
+                pub const Error =
+                    if (lower == .min or upper == .max)
+                        error{}
+                    else
+                        error{LowerIsMoreThanUpper};
 
-            pub fn next(it: *Iterator) ?Self {
-                return if (it.peek) |curr| {
-                    defer it.peek = if (curr.int() == max_int) null else @enumFromInt(curr.int() + 1);
-                    return curr;
-                } else null;
-            }
-        };
+                pub fn init(l: Lower, u: Upper) Error!Iterator(lower, upper) {
+                    if (comptime lower != .min and upper != .max)
+                        if (l.ord(u) == .more)
+                            return Error.LowerIsMoreThanUpper;
+                    return .{
+                        .lower = l,
+                        .upper = u,
+                        .peek = switch (lower) {
+                            .runtime => l,
+                            .min => min_bint,
+                        },
+                    };
+                }
+
+                pub fn next(i: *Iterator(lower, upper)) ?Self {
+                    const u = switch (upper) {
+                        .max => max_bint,
+                        .runtime => i.upper,
+                    };
+
+                    return if (i.peek) |p| {
+                        i.peek = switch (p.ord(u)) {
+                            .less => @enumFromInt(p.int() + 1),
+                            .same => null,
+                            .more => unreachable,
+                        };
+
+                        return p;
+                    } else null;
+                }
+            };
+        }
 
         pub fn ClampError(comptime F: type, comptime C: type) type {
             const FloorBint = From(F);

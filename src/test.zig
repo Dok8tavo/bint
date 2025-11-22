@@ -1133,10 +1133,61 @@ test "expect" {
     try not_nine.expect();
 }
 
-test "Iterator" {
+test "Iterator(...).init" {
     // The `Iterator` type is there to make it easier to go through the entire range in a loop.
     const MyBint = Bint(-1, 13);
-    var iterator = MyBint.Iterator.init;
-    while (iterator.next()) |my_bint|
+
+    // Either by using both bounds at their maximum:
+    var iterator = try MyBint.Iterator(.min, .max).init({}, {});
+    var check: isize = -1;
+    while (iterator.next()) |my_bint| : (check += 1) {
         try std.testing.expectEqual(MyBint, @TypeOf(my_bint));
+        try std.testing.expectEqual(check, my_bint.int());
+    }
+
+    // Or custom ones:
+    var iterator_2 = try MyBint.Iterator(.runtime, .runtime).init(
+        .widen(2),
+        .widen(8),
+    );
+
+    check = 2;
+    while (iterator_2.next()) |my_bint| : (check += 1) {
+        try std.testing.expectEqual(MyBint, @TypeOf(my_bint));
+        try std.testing.expectEqual(check, my_bint.int());
+    }
+
+    // Or only one custom:
+    var iterator_3 = try MyBint.Iterator(.min, .runtime).init({}, .widen(2));
+    check = -1;
+    while (iterator_3.next()) |my_bint| : (check += 1) {
+        try std.testing.expectEqual(MyBint, @TypeOf(my_bint));
+        try std.testing.expectEqual(check, my_bint.int());
+    }
+
+    // When both the lower and upper bounds are runtime, the `init` function can fail:
+    try std.testing.expectError(
+        error.LowerIsMoreThanUpper,
+        MyBint.Iterator(.runtime, .runtime).init(.widen(2), .widen(1)),
+    );
+}
+
+test "Iterator.init - comptime smartness" {
+    // When using `Iterator(...).init`, if the function can't fail because the lower bound is set
+    // to `.min` or the upper bound is set to `.max` or both, the failing path is a dead path.
+
+    const Iterator1 = Bint(-128, 64).Iterator(.min, .runtime);
+    _ = Iterator1.init({}, .widen(10)) catch @compileError(
+        "This can't be reached, because the upper argument is always bigger than `.min_bint`.",
+    );
+
+    const Iterator2 = Bint(-128, 100).Iterator(.runtime, .max);
+    _ = Iterator2.init(.widen(99), {}) catch @compileError(
+        "This can't be reached, because the lower argument is always smaller than `.max_bint`.",
+    );
+
+    const Iterator3 = Bint(-10, 10).Iterator(.min, .max);
+    _ = Iterator3.init({}, {}) catch @compileError(
+        "This can't be reached, because obviously `.min_bint` is smaller than `.max_bint`.",
+    );
 }
