@@ -1191,3 +1191,50 @@ test "Iterator.init - comptime smartness" {
         "This can't be reached, because obviously `.min_bint` is smaller than `.max_bint`.",
     );
 }
+
+test "iterator" {
+    // The `.iterator` is a `Iterator(.min, .max)` at the start of the iteration.
+    try std.testing.expectEqual(
+        Bint(0, 10)
+            .Iterator(.min, .max)
+            .init({}, {}) catch unreachable,
+        Bint(0, 10)
+            .iterator,
+    );
+}
+
+test "iterateFrom" {
+    // The `.iteratorFrom` function returns an `Iterator(.runtime, .max)` at the start of the
+    // iteration.
+    try std.testing.expectEqual(
+        Bint(-5, 5)
+            .Iterator(.runtime, .max)
+            .init(.widen(1), {}) catch unreachable,
+        Bint(-5, 5)
+            .iterateFrom(.widen(1)),
+    );
+}
+
+test "iterateUntil" {
+    // The `.iterateUntil` function returns an `Iterator(.min, .runtime)` at the start of the
+    // iteration.
+    try std.testing.expectEqual(
+        Bint(-128, 127)
+            .Iterator(.min, .runtime)
+            .init({}, .widen(100)) catch unreachable,
+        Bint(-128, 127)
+            .iterateUntil(.widen(100)),
+    );
+}
+
+test "iterate" {
+    // The `.iterate` function returns an `Iterator(.runtime, .runtime)` at the start of the
+    // iteration.
+    try std.testing.expectEqual(
+        Bint(-100, 0)
+            .Iterator(.runtime, .runtime)
+            .init(.widen(-10), .widen(-2)) catch unreachable,
+        Bint(-100, 0)
+            .iterate(.widen(-10), .widen(-2)) catch unreachable,
+    );
+}

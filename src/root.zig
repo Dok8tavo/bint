@@ -717,6 +717,22 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             };
         }
 
+        pub const iterator = Iterator(.min, .max).all_range;
+        pub fn iterateUntil(upper: Self) Iterator(.min, .runtime) {
+            return Iterator(.min, .runtime).init({}, upper) catch
+                @compileError("The lower bound must be `.min_bint`.");
+        }
+
+        pub fn iterateFrom(lower: Self) Iterator(.runtime, .max) {
+            return Iterator(.runtime, .max).init(lower, {}) catch
+                @compileError("The upper bound must be `.max_bint`.");
+        }
+
+        pub const RuntimeIterator = Iterator(.runtime, .runtime);
+        pub fn iterate(lower: Self, upper: Self) RuntimeIterator.Error!RuntimeIterator {
+            return try .init(lower, upper);
+        }
+
         pub fn expect(s: Self) BoundsError!void {
             if (s.int() < min_int or max_int < s.int())
                 return BoundsError.OutOfBoundsInteger;
