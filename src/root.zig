@@ -287,6 +287,11 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
                 upper: Upper,
                 peek: ?Bint(min_int, max_int),
 
+                pub const all_range = Iterator(lower, upper).init(
+                    if (lower == .min) {} else .min_bint,
+                    if (upper == .max) {} else .max_bint,
+                ) catch unreachable;
+
                 pub const Error =
                     if (lower == .min or upper == .max)
                         error{}
