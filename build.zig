@@ -1,8 +1,5 @@
 const std = @import("std");
 
-const MaxInt = u65535;
-const MinInt = i65535;
-
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});

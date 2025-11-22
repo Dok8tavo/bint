@@ -151,44 +151,12 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
 
         pub const Abs = FromRange(range.abs());
 
-        pub fn FloorError(comptime T: type) type {
-            const Other = From(T);
-            return switch (range.floor(Other.range)) {
-                .must_pass => error{},
-                else => BoundsError,
-            };
-        }
-
-        pub fn FloorPayload(comptime T: type) type {
-            const Other = From(T);
-            return FromRange(switch (range.floor(Other.range)) {
-                .must_fail => return noreturn,
-                .can_both, .must_pass => |floored_range| floored_range,
-            });
-        }
-
         pub fn Floor(comptime T: type) type {
-            return FloorError(T)!FloorPayload(T);
-        }
-
-        pub fn CeilPayload(comptime T: type) type {
-            const Other = From(T);
-            return FromRange(switch (range.ceil(Other.range)) {
-                .must_fail => return noreturn,
-                .must_pass, .can_both => |ceiled_range| ceiled_range,
-            });
-        }
-
-        pub fn CeilError(comptime T: type) type {
-            const Other = From(T);
-            return switch (range.ceil(Other.range)) {
-                .must_pass => error{},
-                else => BoundsError,
-            };
+            return Clamp(T, FromComptime(Self.max_int));
         }
 
         pub fn Ceil(comptime T: type) type {
-            return CeilError(T)!CeilPayload(T);
+            return Clamp(FromComptime(Self.min_int), T);
         }
 
         pub fn Closest(comptime T: type) type {
@@ -320,6 +288,34 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
                 } else null;
             }
         };
+
+        pub fn ClampError(comptime F: type, comptime C: type) type {
+            const FloorBint = From(F);
+            const CeilBint = From(C);
+            return switch (range.clamp(FloorBint.range, CeilBint.range)) {
+                .can_fail => error{ Overflow, Underflow },
+                .can_overflow, .must_overflow => error{Overflow},
+                .can_underflow, .must_underflow => error{Underflow},
+                .must_pass => error{},
+            };
+        }
+
+        pub fn ClampPayload(comptime F: type, comptime C: type) type {
+            const FloorBint = From(F);
+            const CeilBint = From(C);
+            return FromRange(switch (range.clamp(FloorBint.range, CeilBint.range)) {
+                .must_overflow, .must_underflow => return noreturn,
+                .can_fail,
+                .can_overflow,
+                .can_underflow,
+                .must_pass,
+                => |r| r,
+            });
+        }
+
+        pub fn Clamp(comptime F: type, comptime C: type) type {
+            return ClampError(F, C)!ClampPayload(F, C);
+        }
 
         pub fn init(anyint: anytype) Init(@TypeOf(anyint)) {
             const other = from(anyint);
@@ -535,38 +531,41 @@ pub fn Bint(comptime minimum: comptime_int, comptime maximum: comptime_int) type
             return @enumFromInt(@abs(wide.int()));
         }
 
+        pub fn clamp(
+            s: Self,
+            anyfloor: anytype,
+            anyceil: anytype,
+        ) Clamp(@TypeOf(anyfloor), @TypeOf(anyceil)) {
+            const Anyfloor = From(@TypeOf(anyfloor));
+            const Anyceil = From(@TypeOf(anyceil));
+            const clamp_range = range.clamp(Anyfloor.range, Anyceil.range);
+            return switch (clamp_range) {
+                .must_overflow => error.Overflow,
+                .must_underflow => error.Underflow,
+                .must_pass => @enumFromInt(s.int()),
+                .can_underflow => if (s.ord(anyfloor) == .less)
+                    error.Underflow
+                else
+                    @enumFromInt(s.int()),
+                .can_overflow => if (s.ord(anyceil) == .more)
+                    error.Overflow
+                else
+                    @enumFromInt(s.int()),
+                .can_fail => if (s.ord(anyfloor) == .less)
+                    error.Underflow
+                else if (s.ord(anyceil) == .more)
+                    error.Overflow
+                else
+                    @enumFromInt(s.int()),
+            };
+        }
+
         pub fn floor(s: Self, bound: anytype) Floor(@TypeOf(bound)) {
-            const Other = From(@TypeOf(bound));
-
-            if (comptime Self.max_int < Other.min_int)
-                return BoundsError.OutOfBoundsInteger;
-
-            if (comptime Other.max_int <= Self.min_int)
-                return @enumFromInt(s.int());
-
-            const b = from(bound);
-
-            if (s.int() < b.int())
-                return BoundsError.OutOfBoundsInteger;
-
-            return @enumFromInt(s.int());
+            return try s.clamp(bound, fromComptime(max_int));
         }
 
         pub fn ceil(s: Self, bound: anytype) Ceil(@TypeOf(bound)) {
-            const Other = From(@TypeOf(bound));
-
-            if (comptime Other.max_int < Self.min_int)
-                return BoundsError.OutOfBoundsInteger;
-
-            if (comptime Self.max_int <= Other.min_int)
-                return @enumFromInt(s.int());
-
-            const b = from(bound);
-
-            if (b.int() < s.int())
-                return BoundsError.OutOfBoundsInteger;
-
-            return @enumFromInt(s.int());
+            return try s.clamp(fromComptime(min_int), bound);
         }
 
         pub fn closest(anyint: anytype) Closest(@TypeOf(anyint)) {

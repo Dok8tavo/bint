@@ -209,26 +209,60 @@ pub const MayFail = union(enum) {
 };
 
 pub fn floor(r1: Range, r2: Range) MayFail {
-    if (r2.upper <= r1.lower)
-        return .{ .must_pass = r1 };
-
-    if (r1.upper < r2.lower)
-        return .must_fail;
-
-    return .{
-        .can_both = from(r2.lower, r1.upper),
+    return switch (r1.clamp(r2, splat(r1.upper))) {
+        .can_underflow => |r| .{ .can_both = r },
+        .must_pass => |r| .{ .must_pass = r },
+        .must_underflow => .must_fail,
+        else => unreachable,
     };
 }
 
 pub fn ceil(r1: Range, r2: Range) MayFail {
-    if (r1.upper <= r2.lower)
-        return .{ .must_pass = r1 };
+    return switch (r1.clamp(splat(r1.lower), r2)) {
+        .can_overflow => |r| .{ .can_both = r },
+        .must_pass => |r| .{ .must_pass = r },
+        .must_overflow => .must_fail,
+        else => unreachable,
+    };
+}
 
-    if (r2.upper < r1.lower)
-        return .must_fail;
+pub const Clamp = union(enum) {
+    can_fail: Range,
+    can_overflow: Range,
+    can_underflow: Range,
+    must_overflow,
+    must_underflow,
+    must_pass: Range,
+};
+
+pub fn clamp(r: Range, r_floor: Range, r_ceil: Range) Clamp {
+    if (r.upper < r_floor.lower)
+        return .must_underflow;
+
+    if (r_ceil.upper < r.lower)
+        return .must_overflow;
+
+    const can_overflow = r_ceil.lower < r.upper;
+    const can_underflow = r.lower < r_floor.upper;
+
+    if (!can_overflow and !can_underflow)
+        return .{ .must_pass = r };
+
+    if (!can_overflow) return .{ .can_underflow = from(
+        @max(r.lower, r_floor.lower),
+        r.upper,
+    ) };
+
+    if (!can_underflow) return .{ .can_overflow = from(
+        r.lower,
+        @min(r.upper, r_ceil.upper),
+    ) };
 
     return .{
-        .can_both = from(r1.lower, r2.upper),
+        .can_fail = from(
+            @max(r.lower, r_floor.lower),
+            @min(r.upper, r_ceil.upper),
+        ),
     };
 }
 

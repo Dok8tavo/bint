@@ -495,7 +495,7 @@ test "floor" {
         bint.fromComptime(0));
 
     try std.testing.expect(0 <= ensured_its_positive.int());
-    try std.testing.expectError(error.OutOfBoundsInteger, two.floor(
+    try std.testing.expectError(error.Underflow, two.floor(
         // Since the floor is higher than `two`, the operation fails
         @as(usize, 3)));
 }
@@ -540,7 +540,7 @@ test "floor - comptime smartness" {
         // A `Bint(9, 10)` is always greater than a `Bint(0, 8)`.
         @compileError("This floor operation must be guaranteed to fail!")
     else |fail|
-        try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
+        try std.testing.expectEqual(error.Underflow, fail);
 }
 
 test "ceil" {
@@ -553,9 +553,11 @@ test "ceil" {
     const less_than_eleven = try ten.ceil(eleven);
     try std.testing.expect(less_than_eleven.int() <= 11);
 
+    //@breakpoint();
+
     // If the first bint is bigger than the second argument, it'll fail.
     try std.testing.expectError(
-        error.OutOfBoundsInteger,
+        error.Overflow,
         eleven.ceil(ten),
     );
 }
@@ -599,7 +601,56 @@ test "ceil - comptime smartness" {
         @compileError("The ceil should always be too low!")
     else |fail|
         // This will always be reached.
-        try std.testing.expectEqual(error.OutOfBoundsInteger, fail);
+        try std.testing.expectEqual(error.Overflow, fail);
+}
+
+test "clamp" {
+    // The `clamp` functon is equivalent to `floor` and `ceil` at once.
+    const floor = Bint(-10, 10).widen(5);
+    const ceil = Bint(-20, 12).widen(7);
+
+    const four = Bint(-9, 100).widen(4);
+    const five = Bint(0, 255).widen(5);
+    const six = Bint(-1, 10).widen(6);
+    const seven = Bint(1, 8).widen(7);
+    const eight = Bint(2, 9).widen(8);
+
+    // If the floor is bigger, it fails.
+    try std.testing.expectEqual(error.Underflow, four.clamp(floor, ceil));
+    // If it's equal, it passes.
+    const clamped_five = try five.clamp(floor, ceil);
+    const clamped_six = try six.clamp(floor, ceil);
+    const clamped_seven = try seven.clamp(floor, ceil);
+    // If the ceil is smaller, it fails again.
+    try std.testing.expectEqual(error.Overflow, eight.clamp(floor, ceil));
+
+    try std.testing.expectEqual(5, clamped_five.int());
+    try std.testing.expectEqual(6, clamped_six.int());
+    try std.testing.expectEqual(7, clamped_seven.int());
+}
+
+test "clamp - narrowing" {
+    // The `clamp` operation is always narrowing, or at least never widening. It narrows to the
+    // lowest floor and highest ceil.
+
+    const one = Bint(1, 10).widen(1);
+    const two = Bint(0, 8).widen(2);
+    const three = Bint(0, 11).widen(3);
+
+    try std.testing.expectEqual(
+        Bint(1, 8),
+        @TypeOf(try two.clamp(one, three)),
+    );
+
+    try std.testing.expectEqual(
+        Bint(1, 10),
+        @TypeOf(try one.clamp(two, three)),
+    );
+
+    try std.testing.expectEqual(
+        Bint(1, 8),
+        @TypeOf(try three.clamp(one, two)),
+    );
 }
 
 test "div" {
